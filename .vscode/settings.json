@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "sample_structure.h": "c",
+        "stdlib.h": "c",
+        "tpl_usage.h": "c"
+    }
+}
