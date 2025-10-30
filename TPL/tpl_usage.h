@@ -53,13 +53,6 @@ int tpl_encode(wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
         return -1;
     }
 
-    printf("Serialized struct done\n");
-    printf("TPL buffer size: %zu\n", *out_size);
-    for (size_t i = 0; i < *out_size; i++) {
-        printf("%02X ", ((unsigned char*)(*out_buf))[i]);
-    }
-    printf("\n");
-
     return 0;
 }
 

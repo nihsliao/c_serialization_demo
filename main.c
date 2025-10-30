@@ -1,4 +1,6 @@
 #include "TPL/tpl_usage.h"
+#include "MPACK/mpack_usage.h"
+//#include "NANOPB/nanopb_usage.h"
 
 static void print_usage(char** argv) {
     fprintf(stderr, "usage: %s <tpl | mpack | nanopb> <no_socket|server PORT|client HOST PORT>\n", argv[0]);
@@ -10,14 +12,22 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_
             return -1;
         }
     } else if (strcmp(library, "mpack") == 0) {
-        fprintf(stdout, "TODO library: %s\n", library);
-
+        if (mpack_encode(info, out_buf, out_size) != 0) {
+            return -1;
+        }
     } else if (strcmp(library, "nanopb") == 0) {
         fprintf(stdout, "TODO library: %s\n", library);
     } else {
         fprintf(stderr, "unsupported library: %s\n", library);
         return -1;
     }
+
+    printf("Serialized struct done\n");
+    printf("Buffer size: %zu\n", *out_size);
+    for (size_t i = 0; i < *out_size; i++) {
+        printf("%02X ", ((unsigned char*)(*out_buf))[i]);
+    }
+    printf("\n");
     return 0;
 }
 
@@ -27,8 +37,9 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
             return -1;
         }
     } else if (strcmp(library, "mpack") == 0) {
-        fprintf(stdout, "TODO library: %s\n", library);
-
+        if (mpack_decode(buf, sz, out_info) != 0) {
+            return -1;
+        }
     } else if (strcmp(library, "nanopb") == 0) {
         fprintf(stdout, "TODO library: %s\n", library);
     } else {

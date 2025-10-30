@@ -1,7 +1,8 @@
 CC = gcc
 CFLAGS = -Wall -O2 -g
 TPL = TPL/tpl.c
-SRC = main.c $(TPL)
+MPACK = MPACK/mpack/*
+SRC = main.c $(TPL) $(MPACK)
 TARGET = serialize_demo
 
 all: $(TARGET)

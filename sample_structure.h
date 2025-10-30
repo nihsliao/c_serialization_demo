@@ -1,3 +1,5 @@
+# ifndef SAMPLE_STRUCTURE_H
+# define SAMPLE_STRUCTURE_H
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -294,3 +296,4 @@ int do_server(const char* portstr, void** out_buf, size_t* out_size) {
     printf("do_server: received and decoded %zu bytes\n", *out_size);
     return 0;
 }
+# endif /* SAMPLE_STRUCTURE_H */
