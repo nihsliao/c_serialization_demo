@@ -1,0 +1,20 @@
+syntax = "proto3";
+package wifi;
+
+/* IP address */
+message IPAddr {
+  bytes ipv4 = 1; // 4 bytes
+  bytes ipv6 = 2; // 16 bytes
+}
+
+/* WiFi SoftAP info */
+message WifiSoftAPInfo {
+  int32 device_count = 1;
+  int32 state = 2;
+  IPAddr ip_address = 3;
+  bytes ssid = 4;
+  bytes bssid = 5;
+  int32 security = 6;
+  uint32 channel = 7;
+  uint32 frequency = 8;
+}

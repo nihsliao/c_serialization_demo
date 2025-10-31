@@ -1,8 +1,16 @@
 CC = gcc
 CFLAGS = -Wall -O2 -g
+
 TPL = TPL/tpl.c
-MPACK = MPACK/mpack/*
-SRC = main.c $(TPL) $(MPACK)
+CFLAGS += -ITPL
+
+MPACK = MPACK/mpack/*.c
+CFLAGS += -IMPACK/mpack
+
+NANOPB = NANOPB/nanopb/*.c
+CFLAGS += -INANOPB/nanopb
+
+SRC = main.c $(TPL) $(MPACK) $(NANOPB)
 TARGET = serialize_demo
 
 all: $(TARGET)

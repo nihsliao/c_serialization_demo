@@ -1,6 +1,6 @@
 #include "TPL/tpl_usage.h"
 #include "MPACK/mpack_usage.h"
-//#include "NANOPB/nanopb_usage.h"
+#include "NANOPB/nanopb_usage.h"
 
 static void print_usage(char** argv) {
     fprintf(stderr, "usage: %s <tpl | mpack | nanopb> <no_socket|server PORT|client HOST PORT>\n", argv[0]);
@@ -16,7 +16,9 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_
             return -1;
         }
     } else if (strcmp(library, "nanopb") == 0) {
-        fprintf(stdout, "TODO library: %s\n", library);
+        if (nanopb_encode(info, out_buf, out_size) != 0) {
+            return -1;
+        }
     } else {
         fprintf(stderr, "unsupported library: %s\n", library);
         return -1;
@@ -41,7 +43,9 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
             return -1;
         }
     } else if (strcmp(library, "nanopb") == 0) {
-        fprintf(stdout, "TODO library: %s\n", library);
+        if (nanopb_decode(buf, sz, out_info) != 0) {
+            return -1;
+        }
     } else {
         fprintf(stderr, "unsupported library: %s\n", library);
         return -1;
