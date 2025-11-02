@@ -58,12 +58,12 @@ int tpl_encode(wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
 
 /*
  * tpl_decode
- *  - input: tpl_buf, tpl_size
+ *  - input: buffer, size
  *  - output: out_info (filled)
  *  - return: 0 on success, -1 on failure
  */
-int tpl_decode(void* tpl_buf, size_t tpl_size, wifi_softap_info_t* out_info) {
-    if (!tpl_buf || tpl_size == 0 || !out_info) return -1;
+int tpl_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
+    if (!buffer || size == 0 || !out_info) return -1;
 
     memset(out_info, 0, sizeof(*out_info));
 
@@ -76,7 +76,7 @@ int tpl_decode(void* tpl_buf, size_t tpl_size, wifi_softap_info_t* out_info) {
         &out_info->frequency);
     if (!tn) return -1;
 
-    if (tpl_load(tn, TPL_MEM, tpl_buf, tpl_size) != 0) {
+    if (tpl_load(tn, TPL_MEM, buffer, size) != 0) {
         tpl_free(tn);
         return -1;
     }

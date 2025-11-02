@@ -5,6 +5,7 @@
     - **請修改 `.proto` OR `.options`** 再以指令重新產生
 - `nanopb` 為 zlib license
 - 詳細可以參考 `nanopb` 下的說明
+    - 使用 [Nanopb 0.4.9.1](https://github.com/nanopb/nanopb/releases/tag/nanopb-0.4.9.1)
 
 ### Requirement
 - Install `python`, `protobuf`

@@ -1,8 +1,6 @@
 /* MPACK/mpack_usage.h
  *
  * Requires: mpack.h (MPack library)
- * Compile: add -I/path/to/mpack/include and link against mpack (if you build it as a lib)
- *
  * Exports:
  *   int mpack_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size);
  *   int mpack_decode(void *buffer, size_t size, wifi_softap_info_t *out_info);
@@ -20,16 +18,12 @@
  *       security (int32),
  *       channel (uint8),
  *       frequency (int32) ]
- *
- * If you get compile errors about missing mpack_* symbols, replace the names with
- * the versions available in your local mpack (common variants: mpack_write_u32 / mpack_write_uint).
  */
 
 #ifndef MPACK_USAGE_H
 #define MPACK_USAGE_H
 
 #include "../sample_structure.h" /* defines wifi_softap_info_t, constants */
-/* include the MPack header; adjust include path if necessary */
 #include "mpack/mpack.h"
 
 /* ---------- mpack encode / decode ---------- */
@@ -51,16 +45,9 @@ int mpack_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size) 
     /* write an array of 9 elements (fixed-order schema) */
     mpack_start_array(&writer, 9);
 
-    /* device_count (int32) */
     mpack_write_i32(&writer, (int32_t)info->device_count);
-
-    /* state (int32) */
     mpack_write_i32(&writer, (int32_t)info->state);
-
-    /* ipv4: write as bin (4 bytes) */
     mpack_write_bin(&writer, (const char*)info->ip_address.ipv4, sizeof(info->ip_address.ipv4));
-
-    /* ipv6: 16 bytes */
     mpack_write_bin(&writer, (const char*)info->ip_address.ipv6, sizeof(info->ip_address.ipv6));
 
     /* ssid: variable length binary/string (we store raw bytes length = strlen) */
@@ -72,16 +59,9 @@ int mpack_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size) 
         mpack_write_bin(&writer, "", 0);
     }
 
-    /* bssid: 6 bytes */
     mpack_write_bin(&writer, (const char*)info->bssid, WIFI_BT_MAC_ADDRESS_LEN);
-
-    /* security (int32) */
     mpack_write_i32(&writer, (int32_t)info->security);
-
-    /* channel (single byte) -> write as uint */
     mpack_write_u8(&writer, (uint8_t)info->channel);
-
-    /* frequency (int32) */
     mpack_write_i32(&writer, (int32_t)info->frequency);
 
     mpack_finish_array(&writer);
@@ -125,53 +105,41 @@ int mpack_decode(void *buffer, size_t size, wifi_softap_info_t *out_info) {
 
     memset(out_info, 0, sizeof(*out_info));
 
-    /* device_count */
     out_info->device_count = (int32_t)mpack_expect_i32(&reader);
-
-    /* state */
     out_info->state = (int32_t)mpack_expect_i32(&reader);
 
-    /* ipv4 (bin 4) */
-    size_t binlen = 0;
-    const char *binptr = mpack_expect_bin_alloc(&reader, sizeof(out_info->ip_address.ipv4), &binlen);
-    if (mpack_reader_error(&reader) != mpack_ok || binlen != sizeof(out_info->ip_address.ipv4)) {
+    char buf[WIFI_SSID_MAX_LEN];
+    size_t binlen = mpack_expect_bin_buf(&reader, buf, sizeof(buf));
+    if (binlen != sizeof(out_info->ip_address.ipv4)) {
         mpack_reader_destroy(&reader);
         return -1;
     }
-    memcpy(out_info->ip_address.ipv4, binptr, binlen);
+    memcpy(out_info->ip_address.ipv4, buf, binlen);
 
-    /* ipv6 (bin 16) */
-    binptr = mpack_expect_bin_alloc(&reader, sizeof(out_info->ip_address.ipv6), &binlen);
-    if (mpack_reader_error(&reader) != mpack_ok || binlen != sizeof(out_info->ip_address.ipv6)) {
+    binlen = mpack_expect_bin_buf(&reader, buf, sizeof(buf));
+    if (binlen != sizeof(out_info->ip_address.ipv6)) {
         mpack_reader_destroy(&reader);
         return -1;
     }
-    memcpy(out_info->ip_address.ipv6, binptr, binlen);
+    memcpy(out_info->ip_address.ipv6, buf, binlen);
 
-    /* ssid (bin N) */
-    binptr = mpack_expect_bin_alloc(&reader, sizeof(out_info->ssid), &binlen);
-    if (mpack_reader_error(&reader) != mpack_ok || binlen > WIFI_SSID_MAX_LEN) {
+    binlen = mpack_expect_bin_buf(&reader, buf, sizeof(buf));
+    if (binlen > WIFI_SSID_MAX_LEN) {
         mpack_reader_destroy(&reader);
         return -1;
     }
-    if (binlen > 0) memcpy(out_info->ssid, binptr, binlen);
+    if (binlen > 0) memcpy(out_info->ssid, buf, binlen);
     out_info->ssid[binlen] = '\0';
 
-    /* bssid (bin 6) */
-    binptr = mpack_expect_bin_alloc(&reader, sizeof(out_info->bssid), &binlen);
-    if (mpack_reader_error(&reader) != mpack_ok || binlen != WIFI_BT_MAC_ADDRESS_LEN) {
+    binlen = mpack_expect_bin_buf(&reader, buf, sizeof(buf));
+    if (binlen != WIFI_BT_MAC_ADDRESS_LEN) {
         mpack_reader_destroy(&reader);
         return -1;
     }
-    memcpy(out_info->bssid, binptr, binlen);
+    memcpy(out_info->bssid, buf, binlen);
 
-    /* security */
     out_info->security = (int32_t)mpack_expect_i32(&reader);
-
-    /* channel (uint8) */
     out_info->channel = (uint8_t)mpack_expect_u8(&reader);
-
-    /* frequency */
     out_info->frequency = (int32_t)mpack_expect_i32(&reader);
 
     /* ensure no leftover */

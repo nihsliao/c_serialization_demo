@@ -3,9 +3,25 @@
 #include "NANOPB/nanopb_usage.h"
 
 static void print_usage(char** argv) {
+    if (strcmp(argv[1], "tpl") == 0 ||
+        strcmp(argv[1], "mpack") == 0 ||
+        strcmp(argv[1], "nanopb") == 0) {
+        if (strcmp(argv[2], "server") == 0) {
+            fprintf(stderr, "usage: %s %s server PORT\n", argv[0], argv[1]);
+            return;
+        } else if (strcmp(argv[2], "client") == 0) {
+            fprintf(stderr, "usage: %s %s client HOST PORT\n", argv[0], argv[1]);
+            return;
+        }
+    }
     fprintf(stderr, "usage: %s <tpl | mpack | nanopb> <no_socket|server PORT|client HOST PORT>\n", argv[0]);
 }
 
+/* encode the wifi_softap_info_t struct
+ * library: "tpl", "mpack", "nanopb"
+ * out_buf, out_size: output buffer and size
+ * returns 0 on success
+*/
 static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_encode(info, out_buf, out_size) != 0) {
@@ -33,6 +49,12 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_
     return 0;
 }
 
+/* decode the wifi_softap_info_t struct
+ * library: "tpl", "mpack", "nanopb"
+ * buf, sz: input buffer and size
+ * out_info: output struct
+ * returns 0 on success
+*/
 static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_info) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_decode(buf, sz, out_info) != 0) {
@@ -67,7 +89,6 @@ int main(int argc, char** argv) {
         /* test encode/decode without socket */
         getSampleData(&info);
 
-        // encode
         if (encode(argv[1], &info, &buf, &sz) != 0) {
             free(buf);
             perror("encode failed\n");
@@ -75,7 +96,6 @@ int main(int argc, char** argv) {
         }
 
         wifi_softap_info_t decoded_info;
-        // decode
         int result = decode(argv[1], buf, sz, &decoded_info);
         free(buf);
         if (result != 0) {
@@ -99,7 +119,6 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        // decode tpl data
         int result = decode(argv[1], buf, sz, &info);
         free(buf);
         if (result != 0) {
@@ -118,14 +137,13 @@ int main(int argc, char** argv) {
         }
 
         getSampleData(&info);
-        // encode tpl data
         if (encode(argv[1], &info, &buf, &sz) != 0) {
             free(buf);
             perror("encode failed\n");
             return -1;
         }
 
-        // send tpl data
+        // send data
         int result = do_client(argv[3], argv[4], buf, sz);
         free(buf);
         if (result != 0) {

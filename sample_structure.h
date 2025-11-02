@@ -13,6 +13,8 @@
 
 #define WIFI_SSID_MAX_LEN 32
 #define WIFI_BT_MAC_ADDRESS_LEN 6
+#define IPV4_LEN 4
+#define IPV6_LEN 16
 
 /* WiFi scan results */
 typedef enum {
