@@ -1,5 +1,5 @@
-# ifndef SAMPLE_STRUCTURE_H
-# define SAMPLE_STRUCTURE_H
+#ifndef SAMPLE_STRUCTURE_H
+#define SAMPLE_STRUCTURE_H
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -234,7 +234,7 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size) {
         return -1;
     }
 
-    void *buf = malloc(*size);
+    void* buf = malloc(*size);
     if (!buf) {
         fprintf(stderr, "malloc fail\n");
         close(csock);
@@ -298,4 +298,4 @@ int do_server(const char* portstr, void** out_buf, size_t* out_size) {
     printf("do_server: received and decoded %zu bytes\n", *out_size);
     return 0;
 }
-# endif /* SAMPLE_STRUCTURE_H */
+#endif /* SAMPLE_STRUCTURE_H */

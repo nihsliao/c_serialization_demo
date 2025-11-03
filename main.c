@@ -1,6 +1,6 @@
-#include "TPL/tpl_usage.h"
 #include "MPACK/mpack_usage.h"
 #include "NANOPB/nanopb_usage.h"
+#include "TPL/tpl_usage.h"
 
 static void print_usage(char** argv) {
     if (strcmp(argv[1], "tpl") == 0 ||
@@ -21,7 +21,7 @@ static void print_usage(char** argv) {
  * library: "tpl", "mpack", "nanopb"
  * out_buf, out_size: output buffer and size
  * returns 0 on success
-*/
+ */
 static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_encode(info, out_buf, out_size) != 0) {
@@ -54,7 +54,7 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_
  * buf, sz: input buffer and size
  * out_info: output struct
  * returns 0 on success
-*/
+ */
 static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_info) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_decode(buf, sz, out_info) != 0) {
@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
 
     } else if (strcmp(argv[2], "server") == 0) {
         if (argc != 4) {
-            fprintf(stderr, "usage: %s %s server PORT\n", argv[0], argv[1]);
+            print_usage(argv);
             return -1;
         }
 
@@ -132,7 +132,7 @@ int main(int argc, char** argv) {
 
     } else if (strcmp(argv[2], "client") == 0) {
         if (argc != 5) {
-            fprintf(stderr, "usage: %s %s client HOST PORT\n", argv[0], argv[1]);
+            print_usage(argv);
             return -1;
         }
 

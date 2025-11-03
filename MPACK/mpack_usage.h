@@ -33,10 +33,10 @@
  *  - output: *out_buffer (allocated via malloc inside and must be freed by caller), *out_size
  *  - return: 0 on success, -1 on failure
  */
-int mpack_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size) {
+int mpack_encode(wifi_softap_info_t* info, void** out_buffer, size_t* out_size) {
     if (!info || !out_buffer || !out_size) return -1;
 
-    char *data;
+    char* data;
     size_t size;
     mpack_writer_t writer;
     /* init growable writer: writer will allocate 'data' and set 'size' */
@@ -80,12 +80,12 @@ int mpack_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size) 
 }
 
 /*
-* mpack_decode
-*  - input: *buffer, size
-*  - output: wifi_softap_info_t *info
-*  - return: 0 on success, -1 on failure
-*/
-int mpack_decode(void *buffer, size_t size, wifi_softap_info_t *out_info) {
+ * mpack_decode
+ *  - input: *buffer, size
+ *  - output: wifi_softap_info_t *info
+ *  - return: 0 on success, -1 on failure
+ */
+int mpack_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
     if (!buffer || size == 0 || !out_info) return -1;
 
     mpack_reader_t reader;

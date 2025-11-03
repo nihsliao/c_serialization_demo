@@ -2,9 +2,9 @@
 #define NANOPB_USAGE_H
 
 #include "../sample_structure.h" /* defines wifi_softap_info_t, constants */
-#include "nanopb/sample_structure.pb.h"
-#include "nanopb/pb_encode.h"
 #include "nanopb/pb_decode.h"
+#include "nanopb/pb_encode.h"
+#include "nanopb/sample_structure.pb.h"
 
 /* ---------- nanopb encode / decode ---------- */
 /*
@@ -13,7 +13,7 @@
  *  - output: *out_buffer (allocated via malloc inside and must be freed by caller), *out_size
  *  - return: 0 on success, -1 on failure
  */
-int nanopb_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size) {
+int nanopb_encode(wifi_softap_info_t* info, void** out_buffer, size_t* out_size) {
     if (!info || !out_buffer || !out_size) return -1;
 
     /* create a WifiSoftAPInfo message and populate it from info */
@@ -69,10 +69,10 @@ int nanopb_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size)
  *  - output: wifi_softap_info_t *info
  *  - return: 0 on success, -1 on failure
  */
-int nanopb_decode(void *buffer, size_t size, wifi_softap_info_t *out_info) {
+int nanopb_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
     if (!buffer || size == 0 || !out_info) return -1;
     /* create a stream that reads from the buffer */
-    pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t *)buffer, size);
+    pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t*)buffer, size);
 
     /* create a WifiSoftAPInfo message to hold the decoded data */
     wifi_WifiSoftAPInfo message = wifi_WifiSoftAPInfo_init_default;
