@@ -13,12 +13,12 @@ int tpl_encode(wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
     if (!info || !out_buf || !out_size) return -1;
 
     /* Step 1. setup tpl map, format: wifi_softap_info_t */
-    tpl_node* tn = tpl_map("iic#c#c#c#ici", &info->device_count, &info->state,
-                           info->ip_address.ipv4, (int)sizeof(info->ip_address.ipv4),
-                           info->ip_address.ipv6, (int)sizeof(info->ip_address.ipv6),
-                           info->ssid, (int)sizeof(info->ssid), info->bssid,
-                           (int)sizeof(info->bssid), &info->security, &info->channel,
-                           &info->frequency);
+    tpl_node* tn = tpl_map("S(ii$(c#c#)c#c#icv)", info,
+                           (int)sizeof(info->ip_address.ipv4),
+                           (int)sizeof(info->ip_address.ipv6),
+                           (int)sizeof(info->ssid),
+                           (int)sizeof(info->bssid));
+
     if (!tn) {
         fprintf(stderr, "tpl_map failed\n");
         return -1;
@@ -57,14 +57,11 @@ int tpl_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
     if (!buffer || size == 0 || !out_info) return -1;
 
     memset(out_info, 0, sizeof(*out_info));
-
-    tpl_node* tn = tpl_map(
-        "iic#c#c#c#ici", &out_info->device_count, &out_info->state,
-        out_info->ip_address.ipv4, (int)sizeof(out_info->ip_address.ipv4),
-        out_info->ip_address.ipv6, (int)sizeof(out_info->ip_address.ipv6),
-        out_info->ssid, (int)sizeof(out_info->ssid), out_info->bssid,
-        (int)sizeof(out_info->bssid), &out_info->security, &out_info->channel,
-        &out_info->frequency);
+    tpl_node* tn = tpl_map("S(ii$(c#c#)c#c#icv)", out_info,
+                           (int)sizeof(out_info->ip_address.ipv4),
+                           (int)sizeof(out_info->ip_address.ipv6),
+                           (int)sizeof(out_info->ssid),
+                           (int)sizeof(out_info->bssid));
     if (!tn) return -1;
 
     if (tpl_load(tn, TPL_MEM, buffer, size) != 0) {
