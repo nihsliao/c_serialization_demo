@@ -10,16 +10,17 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 | Library             | tpl         | mpack       | nanopb       |
 | ------------------- | ----------- | ----------- | ------------ |
 | license             | BSD license | MIT license | zlib License |
-| serializtion format | binary      | MessagePack | protobuf     |
+| serializtion format | tpl image   | MessagePack | protobuf     |
 | converted byte      | 114         | 46          | 51           |
 
 ## Usage
 ```shell
-usage: ./serialize_demo <tpl | mpack | nanopb> <no_socket|server PORT|client HOST PORT>
+usage: ./serialize_demo <tpl | mpack | nanopb> <no_socket|array_test|server PORT|client HOST PORT>
 # e.g.
 ./serialize_demo nanopb server 8888
 ./serialize_demo mpack client "127.0.0.1" 8888 (need server exist)
 ./serialize_demo tpl no_socket
+./serialize_demo tpl array_test
 ```
 
 ```mermaid
@@ -96,7 +97,7 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
 static int socket_receive(const char* portstr, void** buffer, size_t* size)
 ```
 
-### encode / decode
+### encode / decode single structure
 ```c
 /* encode the wifi_softap_info_t struct 
  * library: "tpl", "mpack", "nanopb"
@@ -112,4 +113,25 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_
  * returns 0 on success
 */
 static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_info)
+```
+
+### encode / decode structure array
+```c
+/* encode array of wifi_softap_info_t structs
+ * library: "tpl", "mpack", "nanopb"
+ * infos: input array of structs
+ * count: number of structs
+ * out_buf, out_size: output buffer and size
+ * returns 0 on success
+ */
+static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size)
+
+/* decode array of wifi_softap_info_t structs
+ * library: "tpl", "mpack", "nanopb"
+ * buf, sz: input buffer and size
+ * out_infos: output array of structs
+ * out_count: number of structs decoded
+ * returns 0 on success
+ */
+static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t** out_infos, int* out_count)
 ```

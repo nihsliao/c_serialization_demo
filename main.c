@@ -14,7 +14,7 @@ static void print_usage(char** argv) {
             return;
         }
     }
-    fprintf(stderr, "usage: %s <tpl | mpack | nanopb> <no_socket|server PORT|client HOST PORT>\n", argv[0]);
+    fprintf(stderr, "usage: %s <tpl | mpack | nanopb> <no_socket|array_test|server PORT|client HOST PORT>\n", argv[0]);
 }
 
 /* encode the wifi_softap_info_t struct
@@ -75,6 +75,67 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
     return 0;
 }
 
+/* encode array of wifi_softap_info_t structs
+ * library: "tpl", "mpack", "nanopb"
+ * infos: input array of structs
+ * count: number of structs
+ * out_buf, out_size: output buffer and size
+ * returns 0 on success
+ */
+static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size) {
+    if (strcmp(library, "tpl") == 0) {
+        if (tpl_encode_array(infos, count, out_buf, out_size) != 0) {
+            return -1;
+        }
+        // } else if (strcmp(library, "mpack") == 0) {
+        //     if (mpack_encode_array(infos, count, out_buf, out_size) != 0) {
+        //         return -1;
+        //     }
+        // } else if (strcmp(library, "nanopb") == 0) {
+        //     if (nanopb_encode_array(infos, count, out_buf, out_size) != 0) {
+        //         return -1;
+        //     }
+    } else {
+        fprintf(stderr, "unsupported library: %s\n", library);
+        return -1;
+    }
+
+    printf("Serialized array done\n");
+    printf("Buffer size: %zu\n", *out_size);
+    for (size_t i = 0; i < *out_size; i++) {
+        printf("%02X ", ((unsigned char*)(*out_buf))[i]);
+    }
+    printf("\n");
+    return 0;
+}
+
+/* decode array of wifi_softap_info_t structs
+ * library: "tpl", "mpack", "nanopb"
+ * buf, sz: input buffer and size
+ * out_infos: output array of structs
+ * out_count: number of structs decoded
+ * returns 0 on success
+ */
+static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t** out_infos, int* out_count) {
+    if (strcmp(library, "tpl") == 0) {
+        if (tpl_decode_array(buf, sz, out_infos, out_count) != 0) {
+            return -1;
+        }
+        // } else if (strcmp(library, "mpack") == 0) {
+        //     if (mpack_decode_array(buf, sz, out_infos, out_count) != 0) {
+        //         return -1;
+        //     }
+        // } else if (strcmp(library, "nanopb") == 0) {
+        //     if (nanopb_decode_array(buf, sz, out_infos, out_count) != 0) {
+        //         return -1;
+        //     }
+    } else {
+        fprintf(stderr, "unsupported library: %s\n", library);
+        return -1;
+    }
+    return 0;
+}
+
 int main(int argc, char** argv) {
     if (argc < 3) {
         print_usage(argv);
@@ -107,6 +168,42 @@ int main(int argc, char** argv) {
         print_wifi_softap_info(&decoded_info);
         return 0;
 
+    } else if (strcmp(argv[2], "array_test") == 0) {
+        /* test encode/decode array without socket */
+        wifi_softap_info_t infos[2] = {0};
+
+        getSampleData(&infos[0]);
+        strcpy(infos[0].ssid, "HomeWiFi");
+
+        getSampleData(&infos[1]);
+        strcpy(infos[1].ssid, "GuestWiFi");
+        infos[1].device_count = 2;
+        infos[1].channel = 11;
+        infos[1].frequency = 2462;
+        infos[1].ip_address.ipv4[3] = 255;
+
+        if (encode_array(argv[1], infos, 2, &buf, &sz) != 0) {
+            free(buf);
+            perror("encode failed\n");
+            return -1;
+        }
+        printf("Done encode array, start to decode\n");
+
+        wifi_softap_info_t* decoded_infos = NULL;
+        int count = 0;
+        int result = decode_array(argv[1], buf, sz, &decoded_infos, &count);
+        free(buf);
+        if (result != 0) {
+            fprintf(stderr, "decode failed\n");
+            return -1;
+        }
+
+        printf("Decoded struct:\n");
+        for (size_t i = 0; i < count; i++) {
+            print_wifi_softap_info(&decoded_infos[i]);
+        }
+
+        return 0;
     } else if (strcmp(argv[2], "server") == 0) {
         if (argc != 4) {
             print_usage(argv);
@@ -126,10 +223,8 @@ int main(int argc, char** argv) {
             return -1;
         }
 
-        // print received info
         print_wifi_softap_info(&info);
         return 0;
-
     } else if (strcmp(argv[2], "client") == 0) {
         if (argc != 5) {
             print_usage(argv);

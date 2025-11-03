@@ -37,19 +37,10 @@ int tpl_encode(wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
         return -1;
     }
 
-    /* Step 3. write out buffer */
-    *out_buf = malloc(*out_size);
-    if (!*out_buf) {
-        fprintf(stderr, "malloc fail\n");
-        tpl_free(tn);
-        return -1;
-    }
-
-    int result = tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, *out_buf, *out_size);
+    int result = tpl_dump(tn, TPL_MEM, out_buf, out_size);
     tpl_free(tn);
     if (result != 0) {
         fprintf(stderr, "tpl_dump failed\n");
-        free(*out_buf);
         return -1;
     }
 
@@ -85,6 +76,107 @@ int tpl_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
         tpl_free(tn);
         return -1;
     }
+    tpl_free(tn);
+    return 0;
+}
+
+int tpl_encode_array(const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size) {
+    tpl_node* tn;
+    wifi_softap_info_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
+
+    tn = tpl_map("A(iic#c#c#c#icv)",
+                 &tmp.device_count,
+                 &tmp.state,
+                 tmp.ip_address.ipv4, (int)IPV4_LEN,
+                 tmp.ip_address.ipv6, (int)IPV6_LEN,
+                 tmp.ssid, (int)WIFI_SSID_MAX_LEN,
+                 tmp.bssid, (int)WIFI_BT_MAC_ADDRESS_LEN,
+                 &tmp.security,
+                 &tmp.channel,
+                 &tmp.frequency);
+
+    if (!tn) {
+        fprintf(stderr, "tpl_map failed\n");
+        return -1;
+    }
+
+    for (size_t i = 0; i < count; i++) {
+        memcpy(&tmp, &infos[i], sizeof(wifi_softap_info_t));
+        if (tpl_pack(tn, 1) != 0) {
+            fprintf(stderr, "tpl_pack struct %ld failed\n", i);
+            tpl_free(tn);
+            return -1;
+        }
+    }
+
+    if (tpl_dump(tn, TPL_GETSIZE, out_size) != 0) {
+        fprintf(stderr, "tpl_dump TPL_GETSIZE fail\n");
+        tpl_free(tn);
+        return -1;
+    }
+
+    int result = tpl_dump(tn, TPL_MEM, out_buf, out_size);
+    tpl_free(tn);
+    if (result != 0) {
+        fprintf(stderr, "tpl_dump failed\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+int tpl_decode_array(const void* buf, size_t size, wifi_softap_info_t** out_infos, int* out_count) {
+    tpl_node* tn;
+
+    wifi_softap_info_t tmp;
+    memset(&tmp, 0, sizeof(tmp));
+
+    tn = tpl_map("A(iic#c#c#c#icv)",
+                 &tmp.device_count,
+                 &tmp.state,
+                 tmp.ip_address.ipv4, (int)IPV4_LEN,
+                 tmp.ip_address.ipv6, (int)IPV6_LEN,
+                 tmp.ssid, (int)WIFI_SSID_MAX_LEN,
+                 tmp.bssid, (int)WIFI_BT_MAC_ADDRESS_LEN,
+                 &tmp.security,
+                 &tmp.channel,
+                 &tmp.frequency);
+
+    if (!tn) {
+        fprintf(stderr, "tpl_map failed\n");
+        return -1;
+    }
+
+    if (tpl_load(tn, TPL_MEM, buf, size) != 0) {
+        fprintf(stderr, "tpl_load failed\n");
+        tpl_free(tn);
+        return -1;
+    }
+
+    int count = tpl_Alen(tn, 1);
+    if (count <= 0) {
+        fprintf(stderr, "invalid array length %d\n", count);
+        tpl_free(tn);
+        return -1;
+    }
+
+    // unpack each struct
+    *out_infos = malloc(sizeof(wifi_softap_info_t) * count);
+    if (!*out_infos) {
+        fprintf(stderr, "malloc fail\n");
+        tpl_free(tn);
+        return -1;
+    }
+
+    int i = 0;
+    while (tpl_unpack(tn, 1) > 0) {
+        memcpy((*out_infos) + i, &tmp, sizeof(wifi_softap_info_t));
+        i++;
+        if (i >= count) break;
+    }
+
+    *out_count = count;
     tpl_free(tn);
     return 0;
 }
