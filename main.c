@@ -87,10 +87,10 @@ static int encode_array(char* library, const wifi_softap_info_t* infos, int coun
         if (tpl_encode_array(infos, count, out_buf, out_size) != 0) {
             return -1;
         }
-        // } else if (strcmp(library, "mpack") == 0) {
-        //     if (mpack_encode_array(infos, count, out_buf, out_size) != 0) {
-        //         return -1;
-        //     }
+    } else if (strcmp(library, "mpack") == 0) {
+        if (mpack_encode_array(infos, count, out_buf, out_size) != 0) {
+            return -1;
+        }
         // } else if (strcmp(library, "nanopb") == 0) {
         //     if (nanopb_encode_array(infos, count, out_buf, out_size) != 0) {
         //         return -1;
@@ -121,10 +121,10 @@ static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t*
         if (tpl_decode_array(buf, sz, out_infos, out_count) != 0) {
             return -1;
         }
-        // } else if (strcmp(library, "mpack") == 0) {
-        //     if (mpack_decode_array(buf, sz, out_infos, out_count) != 0) {
-        //         return -1;
-        //     }
+    } else if (strcmp(library, "mpack") == 0) {
+        if (mpack_decode_array(buf, sz, out_infos, out_count) != 0) {
+            return -1;
+        }
         // } else if (strcmp(library, "nanopb") == 0) {
         //     if (nanopb_decode_array(buf, sz, out_infos, out_count) != 0) {
         //         return -1;
@@ -151,7 +151,6 @@ int main(int argc, char** argv) {
         getSampleData(&info);
 
         if (encode(argv[1], &info, &buf, &sz) != 0) {
-            free(buf);
             perror("encode failed\n");
             return -1;
         }
@@ -183,7 +182,6 @@ int main(int argc, char** argv) {
         infos[1].ip_address.ipv4[3] = 255;
 
         if (encode_array(argv[1], infos, 2, &buf, &sz) != 0) {
-            free(buf);
             perror("encode failed\n");
             return -1;
         }
@@ -199,7 +197,7 @@ int main(int argc, char** argv) {
         }
 
         printf("Decoded struct:\n");
-        for (size_t i = 0; i < count; i++) {
+        for (int i = 0; i < count; i++) {
             print_wifi_softap_info(&decoded_infos[i]);
         }
 
@@ -233,7 +231,6 @@ int main(int argc, char** argv) {
 
         getSampleData(&info);
         if (encode(argv[1], &info, &buf, &sz) != 0) {
-            free(buf);
             perror("encode failed\n");
             return -1;
         }
