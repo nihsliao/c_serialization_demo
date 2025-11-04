@@ -91,10 +91,10 @@ static int encode_array(char* library, const wifi_softap_info_t* infos, int coun
         if (mpack_encode_array(infos, count, out_buf, out_size) != 0) {
             return -1;
         }
-        // } else if (strcmp(library, "nanopb") == 0) {
-        //     if (nanopb_encode_array(infos, count, out_buf, out_size) != 0) {
-        //         return -1;
-        //     }
+    } else if (strcmp(library, "nanopb") == 0) {
+        if (nanopb_encode_array(infos, count, out_buf, out_size) != 0) {
+            return -1;
+        }
     } else {
         fprintf(stderr, "unsupported library: %s\n", library);
         return -1;
@@ -125,10 +125,10 @@ static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t*
         if (mpack_decode_array(buf, sz, out_infos, out_count) != 0) {
             return -1;
         }
-        // } else if (strcmp(library, "nanopb") == 0) {
-        //     if (nanopb_decode_array(buf, sz, out_infos, out_count) != 0) {
-        //         return -1;
-        //     }
+    } else if (strcmp(library, "nanopb") == 0) {
+        if (nanopb_decode_array(buf, sz, out_infos, out_count) != 0) {
+            return -1;
+        }
     } else {
         fprintf(stderr, "unsupported library: %s\n", library);
         return -1;

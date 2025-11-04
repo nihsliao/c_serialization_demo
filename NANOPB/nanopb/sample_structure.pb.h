@@ -33,6 +33,11 @@ typedef struct _wifi_WifiSoftAPInfo {
     uint32_t frequency;
 } wifi_WifiSoftAPInfo;
 
+typedef struct _wifi_WifiSoftAPList {
+    pb_size_t ap_list_count;
+    wifi_WifiSoftAPInfo ap_list[20];
+} wifi_WifiSoftAPList;
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -41,8 +46,10 @@ extern "C" {
 /* Initializer values for message structs */
 #define wifi_IPAddr_init_default                 {{0, {0}}, {0, {0}}}
 #define wifi_WifiSoftAPInfo_init_default         {0, 0, false, wifi_IPAddr_init_default, {0, {0}}, {0, {0}}, 0, 0, 0}
+#define wifi_WifiSoftAPList_init_default         {0, {wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default, wifi_WifiSoftAPInfo_init_default}}
 #define wifi_IPAddr_init_zero                    {{0, {0}}, {0, {0}}}
 #define wifi_WifiSoftAPInfo_init_zero            {0, 0, false, wifi_IPAddr_init_zero, {0, {0}}, {0, {0}}, 0, 0, 0}
+#define wifi_WifiSoftAPList_init_zero            {0, {wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero, wifi_WifiSoftAPInfo_init_zero}}
 
 /* Field tags (for use in manual encoding/decoding) */
 #define wifi_IPAddr_ipv4_tag                     1
@@ -55,6 +62,7 @@ extern "C" {
 #define wifi_WifiSoftAPInfo_security_tag         6
 #define wifi_WifiSoftAPInfo_channel_tag          7
 #define wifi_WifiSoftAPInfo_frequency_tag        8
+#define wifi_WifiSoftAPList_ap_list_tag          1
 
 /* Struct field encoding specification for nanopb */
 #define wifi_IPAddr_FIELDLIST(X, a) \
@@ -76,17 +84,26 @@ X(a, STATIC,   SINGULAR, UINT32,   frequency,         8)
 #define wifi_WifiSoftAPInfo_DEFAULT NULL
 #define wifi_WifiSoftAPInfo_ip_address_MSGTYPE wifi_IPAddr
 
+#define wifi_WifiSoftAPList_FIELDLIST(X, a) \
+X(a, STATIC,   REPEATED, MESSAGE,  ap_list,           1)
+#define wifi_WifiSoftAPList_CALLBACK NULL
+#define wifi_WifiSoftAPList_DEFAULT NULL
+#define wifi_WifiSoftAPList_ap_list_MSGTYPE wifi_WifiSoftAPInfo
+
 extern const pb_msgdesc_t wifi_IPAddr_msg;
 extern const pb_msgdesc_t wifi_WifiSoftAPInfo_msg;
+extern const pb_msgdesc_t wifi_WifiSoftAPList_msg;
 
 /* Defines for backwards compatibility with code written before nanopb-0.4.0 */
 #define wifi_IPAddr_fields &wifi_IPAddr_msg
 #define wifi_WifiSoftAPInfo_fields &wifi_WifiSoftAPInfo_msg
+#define wifi_WifiSoftAPList_fields &wifi_WifiSoftAPList_msg
 
 /* Maximum encoded size of messages (where known) */
-#define WIFI_SAMPLE_STRUCTURE_PB_H_MAX_SIZE      wifi_WifiSoftAPInfo_size
+#define WIFI_SAMPLE_STRUCTURE_PB_H_MAX_SIZE      wifi_WifiSoftAPList_size
 #define wifi_IPAddr_size                         24
 #define wifi_WifiSoftAPInfo_size                 114
+#define wifi_WifiSoftAPList_size                 2320
 
 #ifdef __cplusplus
 } /* extern "C" */

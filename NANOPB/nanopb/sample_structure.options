@@ -5,3 +5,4 @@ wifi.IPAddr.ipv6 max_size:16
 # For message wifi.WifiSoftAPInfo
 wifi.WifiSoftAPInfo.ssid  max_size:33   # WIFI_SSID_MAX_LEN + 1
 wifi.WifiSoftAPInfo.bssid max_size:6
+wifi.WifiSoftAPList.ap_list max_count: 20

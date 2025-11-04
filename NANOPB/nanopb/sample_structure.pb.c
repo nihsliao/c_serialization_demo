@@ -12,4 +12,7 @@ PB_BIND(wifi_IPAddr, wifi_IPAddr, AUTO)
 PB_BIND(wifi_WifiSoftAPInfo, wifi_WifiSoftAPInfo, AUTO)
 
 
+PB_BIND(wifi_WifiSoftAPList, wifi_WifiSoftAPList, 2)
+
+
 

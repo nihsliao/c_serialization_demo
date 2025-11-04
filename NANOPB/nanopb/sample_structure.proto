@@ -18,3 +18,7 @@ message WifiSoftAPInfo {
   uint32 channel = 7;
   uint32 frequency = 8;
 }
+
+message WifiSoftAPList {
+    repeated WifiSoftAPInfo ap_list = 1;
+}
