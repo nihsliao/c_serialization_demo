@@ -82,16 +82,11 @@ int tpl_encode_array(const wifi_softap_info_t* infos, int count, void** out_buf,
     wifi_softap_info_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
-    tn = tpl_map("A(iic#c#c#c#icv)",
-                 &tmp.device_count,
-                 &tmp.state,
-                 tmp.ip_address.ipv4, (int)IPV4_LEN,
-                 tmp.ip_address.ipv6, (int)IPV6_LEN,
-                 tmp.ssid, (int)WIFI_SSID_MAX_LEN,
-                 tmp.bssid, (int)WIFI_BT_MAC_ADDRESS_LEN,
-                 &tmp.security,
-                 &tmp.channel,
-                 &tmp.frequency);
+    tn = tpl_map("A(S(ii$(c#c#)c#c#icv))", &tmp,
+                 sizeof(tmp.ip_address.ipv4),
+                 sizeof(tmp.ip_address.ipv6),
+                 sizeof(tmp.ssid),
+                 sizeof(tmp.bssid));
 
     if (!tn) {
         fprintf(stderr, "tpl_map failed\n");
@@ -129,16 +124,11 @@ int tpl_decode_array(const void* buf, size_t size, wifi_softap_info_t** out_info
     wifi_softap_info_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
-    tn = tpl_map("A(iic#c#c#c#icv)",
-                 &tmp.device_count,
-                 &tmp.state,
-                 tmp.ip_address.ipv4, (int)IPV4_LEN,
-                 tmp.ip_address.ipv6, (int)IPV6_LEN,
-                 tmp.ssid, (int)WIFI_SSID_MAX_LEN,
-                 tmp.bssid, (int)WIFI_BT_MAC_ADDRESS_LEN,
-                 &tmp.security,
-                 &tmp.channel,
-                 &tmp.frequency);
+    tn = tpl_map("A(S(ii$(c#c#)c#c#icv))", &tmp,
+                 sizeof(tmp.ip_address.ipv4),
+                 sizeof(tmp.ip_address.ipv6),
+                 sizeof(tmp.ssid),
+                 sizeof(tmp.bssid));
 
     if (!tn) {
         fprintf(stderr, "tpl_map failed\n");
