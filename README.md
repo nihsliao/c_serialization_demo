@@ -7,20 +7,31 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 - [nanopb](https://github.com/nanopb/nanopb)
 
 ### Compare
-| Library             | tpl         | mpack       | nanopb       |
-| ------------------- | ----------- | ----------- | ------------ |
-| license             | BSD license | MIT license | zlib License |
-| serializtion format | tpl image   | MessagePack | protobuf     |
-| converted byte      | 114         | 46          | 51           |
+| Library               | tpl              | mpack            | nanopb           |
+| --------------------- | ---------------- | ---------------- | ---------------- |
+| license               | BSD license      | MIT license      | zlib License     |
+| serializtion format   | tpl image        | MessagePack      | protobuf         |
+| single structure      | 118<br>(785 ns)  | 46<br>(460 ns)   | 51<br>(588 ns)   |
+| array of 2 structure  | 199<br>(1150 ns) | 97<br>(335 ns)   | 110<br>(1595 ns) |
+| array of 10 structure | 791<br>(2760 ns) | 481<br>(1150 ns) | 550<br>(7254 ns) |
+
+- The micorseconds are the average time of 10000 executions
 
 ## Usage
 ```shell
-usage: ./serialize_demo <tpl | mpack | nanopb> <no_socket|array_test|server PORT|client HOST PORT>
+usage: ./serialize_demo SHOW_STRUCTURE(0/1) LIBRARY COMMAND
+LIBRARY: tpl|mpack|nanopb
+COMMAND: benchmark_test [TEST_NUMBER]
+         no_socket
+         array_test [NUMBER]
+         server PORT
+         client HOST PORT
 # e.g.
-./serialize_demo nanopb server 8888
-./serialize_demo mpack client "127.0.0.1" 8888 (need server exist)
-./serialize_demo tpl no_socket
-./serialize_demo tpl array_test
+./serialize_demo 1 nanopb server 8888
+./serialize_demo 1 mpack client "127.0.0.1" 8888 (need server exist)
+./serialize_demo 1 tpl no_socket
+./serialize_demo 1 tpl array_test
+./serialize_demo 0 mpack benchmark_test 10000
 ```
 
 ```mermaid
@@ -74,7 +85,6 @@ typedef struct {
 ```
 
 ### socket function
-
 ```c
 /*
  * socket_send
@@ -83,7 +93,7 @@ typedef struct {
  *  - buffer, size: payload to send
  *  - return 0 on success, -1 on failure
  */
-static int socket_send(const char* host, const char* portstr, void* buffer, size_t size)
+static int socket_send(const char* host, const char* portstr, void* buffer, size_t size);
 
 /*
  * socket_receive
@@ -94,7 +104,7 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
  *
  * Note: this function accepts one client connection and returns its payload.
  */
-static int socket_receive(const char* portstr, void** buffer, size_t* size)
+static int socket_receive(const char* portstr, void** buffer, size_t* size);
 ```
 
 ### encode / decode single structure
@@ -104,7 +114,7 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size)
  * out_buf, out_size: output buffer and size
  * returns 0 on success
 */
-static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_t* out_size)
+static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_t* out_size);
 
 /* decode the wifi_softap_info_t struct 
  * library: "tpl", "mpack", "nanopb"
@@ -112,7 +122,7 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_
  * out_info: output struct
  * returns 0 on success
 */
-static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_info)
+static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_info);
 ```
 
 ### encode / decode structure array
@@ -124,7 +134,7 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
  * out_buf, out_size: output buffer and size
  * returns 0 on success
  */
-static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size)
+static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size);
 
 /* decode array of wifi_softap_info_t structs
  * library: "tpl", "mpack", "nanopb"
@@ -133,5 +143,5 @@ static int encode_array(char* library, const wifi_softap_info_t* infos, int coun
  * out_count: number of structs decoded
  * returns 0 on success
  */
-static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t** out_infos, int* out_count)
+static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t** out_infos, int* out_count);
 ```

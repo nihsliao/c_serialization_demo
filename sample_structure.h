@@ -50,22 +50,22 @@ typedef struct {
                                                for 5GHz) */
 } wifi_softap_info_t;
 
-static void getSampleData(wifi_softap_info_t* info) {
+static void getSampleData(wifi_softap_info_t* info, int count) {
     /* prepare a sample payload */
     memset(info, 0, sizeof(*info));
-    info->device_count = 2;
+    info->device_count = 2 + count;
     info->state = (int32_t)WIFI_AP_STATE_ENABLED;
     info->ip_address.ipv4[0] = 192;
     info->ip_address.ipv4[1] = 168;
-    info->ip_address.ipv4[2] = 1;
-    info->ip_address.ipv4[3] = 100;
+    info->ip_address.ipv4[2] = 1 + count;
+    info->ip_address.ipv4[3] = 100 + count;
     /* leave ipv6 zeroed for demo */
     strncpy(info->ssid, "MyAP", sizeof(info->ssid) - 1);
     uint8_t mac[WIFI_BT_MAC_ADDRESS_LEN] = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01};
     memcpy(info->bssid, mac, WIFI_BT_MAC_ADDRESS_LEN);
     info->security = (int32_t)WIFI_SECURITY_TYPE_WPA;
-    info->channel = 6;
-    info->frequency = 2437;
+    info->channel = 6 + count;
+    info->frequency = 2437 + (count * 5);
 }
 
 static void print_wifi_softap_info(const wifi_softap_info_t* info) {

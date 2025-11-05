@@ -181,7 +181,6 @@ int nanopb_decode_array(void* buf, size_t size, wifi_softap_info_t** out_infos, 
         return -1;
     }
 
-    printf("NANOPB: Decoded %d items\n", list.ap_list_count);
     *out_count = list.ap_list_count;
     *out_infos = malloc(list.ap_list_count * sizeof(wifi_softap_info_t));
     for (size_t i = 0; i < list.ap_list_count; i++) {
