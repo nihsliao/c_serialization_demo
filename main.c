@@ -24,16 +24,16 @@ static void print_usage(int argc, char** argv) {
     fprintf(stderr, "usage: %s SHOW_STRUCTURE(0/1) <tpl | mpack | nanopb> <benchmark_test [TEST_NUMBER]|no_socket|array_test [NUMBER]|server PORT|client HOST PORT>\n", argv[0]);
 }
 
-/* High-resolution wall-clock time in microseconds (uses CLOCK_MONOTONIC) */
-static double now_us(void) {
+/* High-resolution wall-clock time in nanoseconds (uses CLOCK_MONOTONIC) */
+static double now_ns(void) {
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
-    return (double)ts.tv_sec * 1e6 + (double)ts.tv_nsec / 1e3;
+    return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
 }
 
 /* calculateAverage
- *  - inputs: array of durations in microseconds (double)
- *  - returns: average in microseconds
+ *  - inputs: array of durations in nanoseconds (double)
+ *  - returns: average in nanoseconds
  */
 double calculateAverage(double* arr, int n) {
     if (n == 0) return 0.0;
@@ -170,7 +170,7 @@ static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t*
 }
 
 int do_no_socket_test(char* library, wifi_softap_info_t *info, double* total_time) {
-    double start = now_us();
+    double start = now_ns();
     void* buf = NULL;
     size_t sz = 0;
 
@@ -190,21 +190,20 @@ int do_no_socket_test(char* library, wifi_softap_info_t *info, double* total_tim
         printf("Decoded struct:\n");
         print_wifi_softap_info(&decoded_info);
     }
-    double end = now_us();
-    *total_time = end - start; /* microseconds */
+    double end = now_ns();
+    *total_time = end - start; /* nanoseconds */
     return 0;
 }
 
 int do_array_no_socket_test(char* library, wifi_softap_info_t* infos, int array_size, double* total_time) {
-    double start = now_us();
-
+    double start = now_ns();
     void* buf = NULL;
     size_t sz = 0;
+
     if (encode_array(library, infos, array_size, &buf, &sz) != 0) {
         perror("encode failed\n");
         return -1;
     }
-    if (SHOW_STRUCTURE) printf("Done encode array, start to decode\n");
 
     wifi_softap_info_t* decoded_infos = NULL;
     int count = 0;
@@ -220,8 +219,8 @@ int do_array_no_socket_test(char* library, wifi_softap_info_t* infos, int array_
             print_wifi_softap_info(&decoded_infos[i]);
         }
     }
-    double end = now_us();
-    *total_time = end - start; /* microseconds */
+    double end = now_ns();
+    *total_time = end - start; /* nanoseconds */
     return 0;
 }
 
@@ -241,7 +240,10 @@ int main(int argc, char** argv) {
         if (argc < 4) {
             print_usage(argc, argv);
             goto done;
-        } else if (argc >= 5) test_number = atoi(argv[4]);
+        }
+        if (argc >= 5) test_number = atoi(argv[4]);
+        if (argc >= 6 && strcmp(argv[5], "1") == 0) SHOW_CAL = 1;
+
         if (test_number <= 0) {
             print_usage(argc, argv);
             goto done;
@@ -278,12 +280,16 @@ int main(int argc, char** argv) {
                 fprintf(stderr, "no_socket test failed\n");
                 goto done;
             }
+        }
 
-            if (do_array_no_socket_test(library, infos, 2, &two_structure_time[i]) != 0) {
+        for (size_t i = 0; i < test_number; i++) {
+            if (do_array_no_socket_test(library, infos, 2, two_structure_time  + i) != 0) {
                 fprintf(stderr, "array no_socket test failed\n");
                 goto done;
             }
+        }
 
+        for (size_t i = 0; i < test_number; i++) {
             if (do_array_no_socket_test(library, infos, array_size, ten_structure_time + i) != 0) {
                 fprintf(stderr, "array no_socket test failed\n");
                 goto done;
@@ -291,9 +297,9 @@ int main(int argc, char** argv) {
         }
 
         printf("Average time for %s:\n", library);
-        printf("Single structure: %.2f microseconds\n", calculateAverage(no_socket_time, test_number));
-        printf("Array of 2 structures: %.2f microseconds\n", calculateAverage(two_structure_time, test_number));
-        printf("Array of 10 structures: %.2f microseconds\n", calculateAverage(ten_structure_time, test_number));
+        printf("Single structure: %.2f nanoseconds\n", calculateAverage(no_socket_time, test_number));
+        printf("Array of 2 structures: %.2f nanoseconds\n", calculateAverage(two_structure_time, test_number));
+        printf("Array of 10 structures: %.2f nanoseconds\n", calculateAverage(ten_structure_time, test_number));
 
         ret = 0;
 
@@ -388,7 +394,7 @@ int main(int argc, char** argv) {
 
 done:
     if (total_time) {
-        printf("Total time: %.2f microseconds\n", total_time);
+        printf("Total time: %.2f nanoseconds\n", total_time);
     }
     return ret;
 }

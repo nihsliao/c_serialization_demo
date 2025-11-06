@@ -11,9 +11,9 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 | --------------------- | ---------------- | ---------------- | ---------------- |
 | license               | BSD license      | MIT license      | zlib License     |
 | serializtion format   | tpl image        | MessagePack      | protobuf         |
-| single structure      | 118<br>(785 ns)  | 46<br>(460 ns)   | 51<br>(588 ns)   |
-| array of 2 structure  | 199<br>(1150 ns) | 97<br>(335 ns)   | 110<br>(1595 ns) |
-| array of 10 structure | 791<br>(2760 ns) | 481<br>(1150 ns) | 550<br>(7254 ns) |
+| single structure      | 118<br>(785 ns)  | 46<br>(166 ns)   | 51<br>(588 ns)   |
+| array of 2 structure  | 199<br>(1150 ns) | 97<br>(355 ns)   | 110<br>(1595 ns) |
+| array of 10 structure | 791<br>(2760 ns) | 481<br>(1220 ns) | 550<br>(7254 ns) |
 
 - The micorseconds are the average time of 10000 executions
 
