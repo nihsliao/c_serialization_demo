@@ -7,15 +7,22 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 - [nanopb](https://github.com/nanopb/nanopb)
 
 ### Compare
-| Library               | tpl              | mpack            | nanopb           |
-| --------------------- | ---------------- | ---------------- | ---------------- |
-| license               | BSD license      | MIT license      | zlib License     |
-| serializtion format   | tpl image        | MessagePack      | protobuf         |
-| single structure      | 118<br>(785 ns)  | 46<br>(166 ns)   | 51<br>(588 ns)   |
-| array of 2 structure  | 199<br>(1150 ns) | 97<br>(355 ns)   | 110<br>(1595 ns) |
-| array of 10 structure | 791<br>(2760 ns) | 481<br>(1220 ns) | 550<br>(7254 ns) |
+| Library               | tpl                                                | mpack                                              | nanopb                                             |
+| --------------------- | -------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
+| license               | BSD license                                        | MIT license                                        | zlib License                                       |
+| serializtion format   | tpl image                                          | MessagePack                                        | protobuf                                           |
+| single structure      | 118 bytes<br>Mean: 734.51 ns<br>Stddev: 50.50 ns   | 46 bytes<br>Mean: 159.00 ns<br>Stddev: 18.31 ns    | 51 bytes<br>Mean: 539.95 ns<br>Stddev: 32.39 ns    |
+| array of 2 structure  | 199 bytes<br>Mean: 1131.37 ns<br>Stddev: 185.32 ns | 97 bytes<br>Mean: 318.22 ns<br>Stddev: 248.23 ns   | 110 bytes<br>Mean: 1560.68 ns<br>Stddev: 176.31 ns |
+| array of 10 structure | 791 bytes<br>Mean: 2799.08 ns<br>Stddev: 355.14 ns | 481 bytes<br>Mean: 1124.34 ns<br>Stddev: 385.39 ns | 550 bytes<br>Mean: 6732.55 ns<br>Stddev: 355.55 ns |
 
-- The micorseconds are the average time of 10000 executions
+- The micorseconds are the average time and standard deviation(Stddev) of 300000 executions
+
+#### Coefficient of Variation
+| Library               | tpl    | mpack        | nanopb |
+| --------------------- | ------ | ------------ | ------ |
+| single structure      | 6.88%  | 11.52%       | 6.00%  |
+| array of 2 structure  | 16.38% | ***78.01%*** | 11.30% |
+| array of 10 structure | 12.69% | ***34.28%*** | 6.20%  |
 
 ## Usage
 ```shell

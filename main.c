@@ -2,6 +2,7 @@
 #include "NANOPB/nanopb_usage.h"
 #include "TPL/tpl_usage.h"
 #include <time.h>
+#include <math.h>
 
 int SHOW_STRUCTURE = 0;
 int SHOW_CAL = 0;
@@ -31,6 +32,15 @@ static double now_ns(void) {
     return (double)ts.tv_sec * 1e9 + (double)ts.tv_nsec;
 }
 
+/* comparator for doubles used by qsort */
+static int cmp_double(const void* a, const void* b) {
+    double da = *(const double*)a;
+    double db = *(const double*)b;
+    if (da < db) return -1;
+    if (da > db) return 1;
+    return 0;
+}
+
 /* calculateAverage
  *  - inputs: array of durations in nanoseconds (double)
  *  - returns: average in nanoseconds
@@ -43,6 +53,32 @@ double calculateAverage(double* arr, int n) {
         if (SHOW_CAL) printf("arr[%d]=%.2f, sum=%.2f\n", i, arr[i], sum);
     }
     return sum / (double)n;
+}
+
+/* median: returns median of array (does not modify original) */
+double calculateMedian(double* arr, int n) {
+    if (n == 0) return 0.0;
+    double* tmp = (double*)malloc(sizeof(double) * n);
+    if (!tmp) return calculateAverage(arr, n);
+    for (int i = 0; i < n; i++) tmp[i] = arr[i];
+    qsort(tmp, n, sizeof(double), cmp_double);
+    double med;
+    if (n % 2 == 1) med = tmp[n/2];
+    else med = (tmp[n/2 - 1] + tmp[n/2]) / 2.0;
+    free(tmp);
+    return med;
+}
+
+/* standard deviation (sample stddev) */
+double calculateStdDev(double* arr, int n) {
+    if (n <= 1) return 0.0;
+    double mean = calculateAverage(arr, n);
+    double sumsq = 0.0;
+    for (int i = 0; i < n; i++) {
+        double d = arr[i] - mean;
+        sumsq += d * d;
+    }
+    return sqrt(sumsq / (double)(n - 1));
 }
 
 /* encode the wifi_softap_info_t struct
@@ -267,15 +303,43 @@ int main(int argc, char** argv) {
             snprintf(infos[j].ssid, sizeof(infos[j].ssid), "WiFi-%d", j);
         }
 
-        double test_time = 0;
-        // For the first run since the first time would take much time
-        if (do_no_socket_test(library, &infos[0], &test_time) != 0) {
-            fprintf(stderr, "no_socket test failed\n");
-            goto done;
-        }
-        printf("First test-test time: %.2f\n", test_time);
+        /* warm-up + measured runs */
+        int warmup = test_number / 1000;
+        if (warmup < 10) warmup = 10;
+        if (warmup >= test_number) warmup = test_number / 2;
 
+        double tmp_time = 0.0;
+        /* warm-up runs (not recorded) */
+        // for (int w = 0; w < warmup; w++) {
+        //     if (do_no_socket_test(library, &infos[0], &tmp_time) != 0) {
+        //         fprintf(stderr, "no_socket warmup failed\n");
+        //         goto done;
+        //     }
+        //     if (do_array_no_socket_test(library, infos, 2, &tmp_time) != 0) {
+        //         fprintf(stderr, "array warmup failed\n");
+        //         goto done;
+        //     }
+        //     if (do_array_no_socket_test(library, infos, array_size, &tmp_time) != 0) {
+        //         fprintf(stderr, "array warmup failed\n");
+        //         goto done;
+        //     }
+        // }
+
+        printf("Do warmup before test (%d runs)\n", warmup);
+
+        /* measured runs */
         for (size_t i = 0; i < test_number; i++) {
+            /* warm-up runs (not recorded) */
+            if (i == 0) {
+                for (int w = 0; w < warmup; w++) {
+                    if (do_no_socket_test(library, &infos[0], &tmp_time) != 0) {
+                        fprintf(stderr, "no_socket warmup failed\n");
+                        goto done;
+                    }
+                    if (SHOW_CAL) printf("Warmup test time: %.2f\n", tmp_time);
+                }
+            }
+
             if (do_no_socket_test(library, &infos[0], no_socket_time + i) != 0) {
                 fprintf(stderr, "no_socket test failed\n");
                 goto done;
@@ -283,6 +347,16 @@ int main(int argc, char** argv) {
         }
 
         for (size_t i = 0; i < test_number; i++) {
+            if (i == 0) {
+                for (int w = 0; w < warmup; w++) {
+                    if (do_array_no_socket_test(library, infos, 2, &tmp_time) != 0) {
+                        fprintf(stderr, "array warmup failed\n");
+                        goto done;
+                    }
+                    if (SHOW_CAL) printf("Warmup test time: %.2f\n", tmp_time);
+                }
+            }
+
             if (do_array_no_socket_test(library, infos, 2, two_structure_time  + i) != 0) {
                 fprintf(stderr, "array no_socket test failed\n");
                 goto done;
@@ -290,16 +364,37 @@ int main(int argc, char** argv) {
         }
 
         for (size_t i = 0; i < test_number; i++) {
+            if (i == 0) {
+                for (int w = 0; w < warmup; w++) {
+                    if (do_array_no_socket_test(library, infos, array_size, &tmp_time) != 0) {
+                        fprintf(stderr, "array warmup failed\n");
+                        goto done;
+                    }
+                    if (SHOW_CAL) printf("Warmup test time: %.2f\n", tmp_time);
+                }
+            }
+
             if (do_array_no_socket_test(library, infos, array_size, ten_structure_time + i) != 0) {
                 fprintf(stderr, "array no_socket test failed\n");
                 goto done;
             }
         }
 
-        printf("Average time for %s:\n", library);
-        printf("Single structure: %.2f nanoseconds\n", calculateAverage(no_socket_time, test_number));
-        printf("Array of 2 structures: %.2f nanoseconds\n", calculateAverage(two_structure_time, test_number));
-        printf("Array of 10 structures: %.2f nanoseconds\n", calculateAverage(ten_structure_time, test_number));
+        /* compute stats (convert ns -> us for printing) */
+        double avg_ns = calculateAverage(no_socket_time, test_number);
+        double med_ns = calculateMedian(no_socket_time, test_number);
+        double sd_ns  = calculateStdDev(no_socket_time, test_number);
+        printf("Average time for %s (single struct): avg=%.2f us, median=%.2f us, stddev=%.2f us\n", library, avg_ns, med_ns, sd_ns);
+
+        avg_ns = calculateAverage(two_structure_time, test_number);
+        med_ns = calculateMedian(two_structure_time, test_number);
+        sd_ns  = calculateStdDev(two_structure_time, test_number);
+        printf("Array of 2 structures: avg=%.2f us, median=%.2f us, stddev=%.2f us\n", avg_ns, med_ns, sd_ns);
+
+        avg_ns = calculateAverage(ten_structure_time, test_number);
+        med_ns = calculateMedian(ten_structure_time, test_number);
+        sd_ns  = calculateStdDev(ten_structure_time, test_number);
+        printf("Array of 10 structures: avg=%.2f us, median=%.2f us, stddev=%.2f us\n", avg_ns, med_ns, sd_ns);
 
         ret = 0;
 

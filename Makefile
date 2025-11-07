@@ -13,10 +13,12 @@ CFLAGS += -INANOPB/nanopb
 SRC = main.c $(TPL) $(MPACK) $(NANOPB)
 TARGET = serialize_demo
 
+LDLIBS += -lm
+
 all: $(TARGET)
 
 $(TARGET): $(SRC)
-	$(CC) $(CFLAGS) -o $@ $(SRC)
+	$(CC) $(CFLAGS) -o $@ $(SRC) $(LDLIBS)
 
 clean:
 	rm -f $(TARGET)
