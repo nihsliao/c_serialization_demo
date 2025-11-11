@@ -17,7 +17,7 @@
  *       bssid (bin 6),
  *       security (int32),
  *       channel (uint8),
- *       frequency (int32) ]
+ *       frequency (uint16) ]
  */
 
 #ifndef MPACK_USAGE_H

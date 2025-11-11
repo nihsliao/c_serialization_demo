@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -O2 -g
+CFLAGS = -Wall -O2 -g #-fsanitize=address -fno-omit-frame-pointer
 
 TPL = TPL/tpl.c
 CFLAGS += -ITPL

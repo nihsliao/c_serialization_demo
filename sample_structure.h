@@ -11,6 +11,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define MAX_ARRAY 20
+#define MAX_BUFFER 4096
+
 #define WIFI_SSID_MAX_LEN 32
 #define WIFI_BT_MAC_ADDRESS_LEN 6
 #define IPV4_LEN 4
@@ -50,7 +53,7 @@ typedef struct {
                                                for 5GHz) */
 } wifi_softap_info_t;
 
-static void getSampleData(wifi_softap_info_t* info, int count) {
+static void getSingleSampleData(wifi_softap_info_t* info, int count) {
     /* prepare a sample payload */
     memset(info, 0, sizeof(*info));
     info->device_count = 2 + count;
@@ -66,6 +69,18 @@ static void getSampleData(wifi_softap_info_t* info, int count) {
     info->security = (int32_t)WIFI_SECURITY_TYPE_WPA;
     info->channel = 6 + count;
     info->frequency = 2437 + (count * 5);
+}
+
+static int fulfillSampleData(wifi_softap_info_t* array, int array_size) {
+    if (array_size == 0 || array_size > MAX_ARRAY) {
+        return -1;
+    }
+
+    for (int i = 0; i < array_size; i++) {
+        getSingleSampleData(&array[i], i);
+        snprintf(array[i].ssid, sizeof(array[i].ssid), "WiFi-%d", i);
+    }
+    return 0;
 }
 
 static void print_wifi_softap_info(const wifi_softap_info_t* info) {
@@ -126,6 +141,7 @@ static int recv_all(int fd, void* buf, size_t len) {
  *  - return 0 on success, -1 on failure
  */
 static int socket_send(const char* host, const char* portstr, void* buffer, size_t size) {
+    int ret = -1;
     /* Create socket */
     int port = atoi(portstr);
     struct sockaddr_in addr;
@@ -133,7 +149,7 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
 
     if (sock < 0) {
         perror("socket");
-        return -1;
+        goto cleanup;
     }
 
     memset(&addr, 0, sizeof(addr));
@@ -142,33 +158,32 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
 
     if (inet_pton(AF_INET, host, &addr.sin_addr) != 1) {
         fprintf(stderr, "inet_pton fail for host %s\n", host);
-        close(sock);
-        return -1;
+        goto cleanup;
     }
 
     if (connect(sock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("connect");
-        close(sock);
-        return -1;
+        goto cleanup;
     }
 
     /* send 8-byte length in network order, then payload */
     uint64_t netlen = htobe64((uint64_t)size);
     if (send_all(sock, &netlen, sizeof(netlen)) != 0) {
         perror("send len");
-        close(sock);
-        return -1;
+        goto cleanup;
     }
 
     if (send_all(sock, buffer, size) != 0) {
         perror("send payload");
-        close(sock);
-        return -1;
+        goto cleanup;
     }
 
     printf("Client: sent %zu bytes\n", size);
-    close(sock);
-    return 0;
+    ret = 0;
+
+cleanup:
+    if (sock) close(sock);
+    return ret;
 }
 
 /*
@@ -181,7 +196,8 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
  * Note: this function accepts one client connection and returns its payload.
  */
 static int socket_receive(const char* portstr, void** buffer, size_t* size) {
-    if (!portstr || !buffer || !size) return -1;
+    int ret = -1;
+    if (!portstr || !buffer || !size) return ret;
     int port = atoi(portstr);
     int lsock, csock;
     struct sockaddr_in addr;
@@ -190,7 +206,7 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size) {
     lsock = socket(AF_INET, SOCK_STREAM, 0);
     if (lsock < 0) {
         perror("socket");
-        return -1;
+        goto cleanup_lsock;
     }
 
     setsockopt(lsock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
@@ -201,59 +217,56 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size) {
 
     if (bind(lsock, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
         perror("bind");
-        return -1;
+        goto cleanup_lsock;
     }
 
     if (listen(lsock, 1) < 0) {
         perror("listen");
-        close(lsock);
-        return -1;
+        goto cleanup_lsock;
     }
 
     printf("Server listening on %d ...\n", port);
     csock = accept(lsock, NULL, NULL);
     if (csock < 0) {
         perror("accept");
-        close(lsock);
-        return -1;
+        goto cleanup_all;
     }
 
     uint64_t netlen;
     if (recv_all(csock, &netlen, sizeof(netlen)) != 0) {
         perror("recv len");
-        close(csock);
-        close(lsock);
-        return -1;
+        goto cleanup_all;
     }
 
     *size = (size_t)be64toh(netlen);
     if (*size == 0) {
         perror("invalid size 0");
-        close(csock);
-        close(lsock);
-        return -1;
+        goto cleanup_all;
+    } else if (*size > MAX_BUFFER) {
+        perror("size too large");
+        goto cleanup_all;
     }
 
     void* buf = malloc(*size);
     if (!buf) {
         fprintf(stderr, "malloc fail\n");
-        close(csock);
-        close(lsock);
-        return -1;
+        goto cleanup_all;
     }
 
     if (recv_all(csock, buf, *size) != 0) {
         perror("recv payload");
-        free(buf);
-        close(csock);
-        close(lsock);
-        return -1;
+        goto cleanup_all;
     }
-    close(csock);
-    close(lsock);
-    *buffer = buf;
+
     printf("Server: expecting %zu bytes\n", *size);
-    return 0;
+    *buffer = buf;
+    ret = 0;
+
+cleanup_all:
+    if (csock) close(csock);
+cleanup_lsock:
+    if (lsock) close(lsock);
+    return ret;
 }
 
 /* ---------- high level do_client / do_server using modular helpers ----------
@@ -282,14 +295,14 @@ int do_client(const char* host, const char* portstr, void* buffer, size_t size) 
 /*
  * do_server
  *  - portstr to listen
- *  - out_buf: pointer to malloc'd buffer containing payload (returned)
+ *  - out_buffer: pointer to malloc'd buffer containing payload (returned)
  *  - out_size: payload size returned
  *  - returns 0 on success
  */
-int do_server(const char* portstr, void** out_buf, size_t* out_size) {
-    if (!portstr || !out_buf || !out_size) return -1;
+int do_server(const char* portstr, void** out_buffer, size_t* out_size) {
+    if (!portstr || !out_buffer || !out_size) return -1;
 
-    int result = socket_receive(portstr, out_buf, out_size);
+    int result = socket_receive(portstr, out_buffer, out_size);
     if (result != 0) {
         printf("Socket receive failed\n");
         return -1;

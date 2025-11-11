@@ -6,12 +6,12 @@
 /*
  * tpl_encode
  *  - input: wifi_softap_info_t *info
- *  - output: *out_buf (allocated via malloc inside), *out_size
+ *  - output: *out_buffer (allocated via malloc inside), *out_size
  *  - return: 0 on success, -1 on failure
  */
-int tpl_encode(wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
+int tpl_encode(wifi_softap_info_t* info, void** out_buffer, size_t* out_size) {
     int ret = -1;
-    if (!info || !out_buf || !out_size) return ret;
+    if (!info || !out_buffer || !out_size) return ret;
 
     /* Step 1. setup tpl map, format: wifi_softap_info_t */
     tpl_node* tn = tpl_map("S(ii$(c#c#)c#c#icv)", info,
@@ -30,13 +30,7 @@ int tpl_encode(wifi_softap_info_t* info, void** out_buf, size_t* out_size) {
         goto cleanup;
     }
 
-    /* get size */
-    if (tpl_dump(tn, TPL_GETSIZE, out_size) != 0) {
-        fprintf(stderr, "tpl_dump TPL_GETSIZE fail\n");
-        goto cleanup;
-    }
-
-    int result = tpl_dump(tn, TPL_MEM, out_buf, out_size);
+    int result = tpl_dump(tn, TPL_MEM, out_buffer, out_size);
     if (result != 0) {
         fprintf(stderr, "tpl_dump failed\n");
         goto cleanup;
@@ -80,9 +74,10 @@ cleanup:
     return ret;
 }
 
-int tpl_encode_array(const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size) {
+int tpl_encode_array(const wifi_softap_info_t* infos, int count, void** out_buffer, size_t* out_size) {
     tpl_node* tn;
     int ret = -1;
+    if (!infos || count <= 0 || !out_buffer || !out_size) return ret;
     wifi_softap_info_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
@@ -105,12 +100,7 @@ int tpl_encode_array(const wifi_softap_info_t* infos, int count, void** out_buf,
         }
     }
 
-    if (tpl_dump(tn, TPL_GETSIZE, out_size) != 0) {
-        fprintf(stderr, "tpl_dump TPL_GETSIZE fail\n");
-        goto cleanup;
-    }
-
-    int result = tpl_dump(tn, TPL_MEM, out_buf, out_size);
+    int result = tpl_dump(tn, TPL_MEM, out_buffer, out_size);
     if (result != 0) {
         fprintf(stderr, "tpl_dump failed\n");
         goto cleanup;
@@ -125,6 +115,7 @@ cleanup:
 int tpl_decode_array(const void* buf, size_t size, wifi_softap_info_t** out_infos, int* out_count) {
     tpl_node* tn;
     int ret = -1;
+    if (!buf || size == 0 || !out_infos || !out_count) return ret;
 
     wifi_softap_info_t tmp;
     memset(&tmp, 0, sizeof(tmp));

@@ -118,10 +118,10 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size);
 ```c
 /* encode the wifi_softap_info_t struct 
  * library: "tpl", "mpack", "nanopb"
- * out_buf, out_size: output buffer and size
+ * out_buffer, out_size: output buffer and size
  * returns 0 on success
 */
-static int encode(char* library, wifi_softap_info_t* info, void** out_buf, size_t* out_size);
+static int encode(char* library, wifi_softap_info_t* info, void** out_buffer, size_t* out_size);
 
 /* decode the wifi_softap_info_t struct 
  * library: "tpl", "mpack", "nanopb"
@@ -138,10 +138,10 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
  * library: "tpl", "mpack", "nanopb"
  * infos: input array of structs
  * count: number of structs
- * out_buf, out_size: output buffer and size
+ * out_buffer, out_size: output buffer and size
  * returns 0 on success
  */
-static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buf, size_t* out_size);
+static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buffer, size_t* out_size);
 
 /* decode array of wifi_softap_info_t structs
  * library: "tpl", "mpack", "nanopb"
