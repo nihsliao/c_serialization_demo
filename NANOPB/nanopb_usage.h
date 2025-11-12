@@ -84,10 +84,10 @@ int parse_wifi_WifiSoftAPInfo(wifi_WifiSoftAPInfo* message, wifi_softap_info_t* 
 /*
  * nanopb_encode
  *  - input: wifi_softap_info_t *info
- *  - output: *out_buffer (allocated via malloc inside and must be freed by caller), *out_size
+ *  - output: *out_buffer, *out_size
  *  - return: 0 on success, -1 on failure
  */
-int nanopb_encode(const wifi_softap_info_t* info, void** out_buffer, size_t* out_size) {
+int nanopb_encode(const wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
     if (!info || !out_buffer || !out_size) return -1;
 
     /* create a WifiSoftAPInfo message and populate it from info */
@@ -96,10 +96,8 @@ int nanopb_encode(const wifi_softap_info_t* info, void** out_buffer, size_t* out
         return -1;
     }
 
-    /* use provided max size */
-    uint8_t buffer[wifi_WifiSoftAPInfo_size];
     /* create a stream that writes to our buffer */
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    pb_ostream_t stream = pb_ostream_from_buffer(out_buffer, MAX_BUFFER);
     if (!pb_encode(&stream, wifi_WifiSoftAPInfo_fields, &message)) {
         fprintf(stderr, "Nanopb encode failed: %s\n", PB_GET_ERROR(&stream));
         return -1;
@@ -107,9 +105,6 @@ int nanopb_encode(const wifi_softap_info_t* info, void** out_buffer, size_t* out
 
     /* success */
     *out_size = stream.bytes_written;
-    *out_buffer = malloc(*out_size);
-    if (!*out_buffer) return -1;
-    memcpy(*out_buffer, buffer, *out_size);
     return 0;
 }
 
@@ -132,7 +127,6 @@ int nanopb_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
         return -1;
     }
 
-    memset(out_info, 0, sizeof(*out_info));
     parse_wifi_WifiSoftAPInfo(&message, out_info);
     return 0;
 }
@@ -140,10 +134,10 @@ int nanopb_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
 /*
  * nanopb_encode_array
  *  - input: wifi_softap_info_t *infos, int count
- *  - output: *out_buffer (allocated via malloc inside and must be freed by caller), *out_size
+ *  - output: *out_buffer, *out_size
  *  - return: 0 on success, -1 on failure
  */
-int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void** out_buffer, size_t* out_size) {
+int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void* out_buffer, size_t* out_size) {
     if (!infos || count == 0 || !out_buffer || !out_size) return -1;
 
     wifi_WifiSoftAPList list = wifi_WifiSoftAPList_init_zero;
@@ -155,10 +149,8 @@ int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void** out_b
     }
     list.ap_list_count = count;
 
-    /* use provided max size */
-    uint8_t buffer[wifi_WifiSoftAPList_size];
     /* create a stream that writes to our buffer */
-    pb_ostream_t stream = pb_ostream_from_buffer(buffer, sizeof(buffer));
+    pb_ostream_t stream = pb_ostream_from_buffer(out_buffer, MAX_BUFFER);
 
     if (!pb_encode(&stream, wifi_WifiSoftAPList_fields, &list)) {
         fprintf(stderr, "Nanopb encode failed: %s\n", PB_GET_ERROR(&stream));
@@ -167,9 +159,6 @@ int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void** out_b
 
     /* success */
     *out_size = stream.bytes_written;
-    *out_buffer = malloc(*out_size);
-    if (!*out_buffer) return -1;
-    memcpy(*out_buffer, buffer, *out_size);
     return 0;
 }
 
@@ -179,7 +168,7 @@ int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void** out_b
  *  - output: wifi_softap_info_t *out_infos
  *  - return: 0 on success, -1 on failure
  */
-int nanopb_decode_array(void* buf, size_t size, wifi_softap_info_t** out_infos, int* out_count) {
+int nanopb_decode_array(void* buf, size_t size, wifi_softap_info_t* out_infos, int* out_count) {
     if (!buf || size == 0 || !out_infos || !out_count) return -1;
 
     pb_istream_t stream = pb_istream_from_buffer((const pb_byte_t*)buf, size);
@@ -192,10 +181,8 @@ int nanopb_decode_array(void* buf, size_t size, wifi_softap_info_t** out_infos, 
     }
 
     *out_count = list.ap_list_count;
-    *out_infos = malloc(list.ap_list_count * sizeof(wifi_softap_info_t));
     for (size_t i = 0; i < list.ap_list_count; i++) {
-        memset((*out_infos) + i, 0, sizeof(wifi_softap_info_t));
-        parse_wifi_WifiSoftAPInfo(&list.ap_list[i], (*out_infos) + i);
+        parse_wifi_WifiSoftAPInfo(&list.ap_list[i], out_infos + i);
     }
 
     return 0;

@@ -7,8 +7,7 @@
 
 int SHOW_STRUCTURE = 0;
 int SHOW_CAL = 0;
-
-void* bytes_buffer = NULL;
+uint8_t bytes_buffer[MAX_BUFFER] = {0};
 size_t buffer_size = 0;
 
 static void print_usage(int argc, char** argv) {
@@ -88,7 +87,7 @@ double calculateStdDev(double* arr, int n) {
  * out_buffer, out_size: output buffer and size
  * returns 0 on success
  */
-static int encode(char* library, wifi_softap_info_t* info, void** out_buffer, size_t* out_size) {
+static int encode(char* library, wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_encode(info, out_buffer, out_size) != 0) {
             return -1;
@@ -109,7 +108,7 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buffer, si
     if (SHOW_STRUCTURE) {
         printf("Serialized struct done\nBuffer size: %zu\n", *out_size);
         for (size_t i = 0; i < *out_size; i++) {
-            printf("%02X ", ((unsigned char*)(*out_buffer))[i]);
+            printf("%02X ", ((unsigned char*)out_buffer)[i]);
         }
         printf("\n");
     }
@@ -150,7 +149,7 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
  * out_buffer, out_size: output buffer and size
  * returns 0 on success
  */
-static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buffer, size_t* out_size) {
+static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void* out_buffer, size_t* out_size) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_encode_array(infos, count, out_buffer, out_size) != 0) {
             return -1;
@@ -172,7 +171,7 @@ static int encode_array(char* library, const wifi_softap_info_t* infos, int coun
         printf("Serialized array done\n");
         printf("Buffer size: %zu\n", *out_size);
         for (size_t i = 0; i < *out_size; i++) {
-            printf("%02X ", ((unsigned char*)(*out_buffer))[i]);
+            printf("%02X ", ((unsigned char*)out_buffer)[i]);
         }
         printf("\n");
     }
@@ -187,7 +186,7 @@ static int encode_array(char* library, const wifi_softap_info_t* infos, int coun
  * out_count: number of structs decoded
  * returns 0 on success
  */
-static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t** out_infos, int* out_count) {
+static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t* out_infos, int* out_count) {
     if (strcmp(library, "tpl") == 0) {
         if (tpl_decode_array(buf, sz, out_infos, out_count) != 0) {
             return -1;
@@ -209,15 +208,16 @@ static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t*
 
 int do_no_socket_test(char* library, wifi_softap_info_t* info, double* total_time) {
     double start = now_ns();
+    memset(bytes_buffer, 0, MAX_BUFFER);
+    buffer_size = 0;
 
-    if (encode(library, info, &bytes_buffer, &buffer_size) != 0) {
+    if (encode(library, info, bytes_buffer, &buffer_size) != 0) {
         perror("encode failed\n");
         return -1;
     }
 
     wifi_softap_info_t decoded_info;
     int result = decode(library, bytes_buffer, buffer_size, &decoded_info);
-    free(bytes_buffer);
     if (result != 0) {
         fprintf(stderr, "decode failed\n");
         return -1;
@@ -232,17 +232,22 @@ int do_no_socket_test(char* library, wifi_softap_info_t* info, double* total_tim
 }
 
 int do_array_no_socket_test(char* library, wifi_softap_info_t* infos, int array_size, double* total_time) {
+    if (array_size > MAX_ARRAY) {
+        perror("encode failed: array_size larger than MAX_ARRAY\n");
+        return -1;
+    }
     double start = now_ns();
+    memset(bytes_buffer, 0, MAX_BUFFER);
+    buffer_size = 0;
 
-    if (encode_array(library, infos, array_size, &bytes_buffer, &buffer_size) != 0) {
+    if (encode_array(library, infos, array_size, bytes_buffer, &buffer_size) != 0) {
         perror("encode failed\n");
         return -1;
     }
 
-    wifi_softap_info_t* decoded_infos = NULL;
+    wifi_softap_info_t decoded_infos[MAX_ARRAY] = {0};
     int count = 0;
-    int result = decode_array(library, bytes_buffer, buffer_size, &decoded_infos, &count);
-    free(bytes_buffer);
+    int result = decode_array(library, bytes_buffer, buffer_size, decoded_infos, &count);
     if (result != 0) {
         fprintf(stderr, "decode failed\n");
         return -1;
@@ -253,7 +258,6 @@ int do_array_no_socket_test(char* library, wifi_softap_info_t* infos, int array_
             print_wifi_softap_info(&decoded_infos[i]);
         }
     }
-    free(decoded_infos);
     double end = now_ns();
     *total_time = end - start; /* nanoseconds */
     return 0;
@@ -431,14 +435,16 @@ int main(int argc, char** argv) {
             goto done;
         }
 
+        memset(bytes_buffer, 0, MAX_BUFFER);
+        buffer_size = 0;
+
         // get data from socket
-        if (do_server(argv[4], &bytes_buffer, &buffer_size) != 0) {
+        if (do_server(argv[4], bytes_buffer, &buffer_size) != 0) {
             fprintf(stderr, "server failed\n");
             goto done;
         }
 
         int result = decode(argv[2], bytes_buffer, buffer_size, &info);
-        free(bytes_buffer);
         if (result != 0) {
             fprintf(stderr, "decode failed\n");
             goto done;
@@ -453,15 +459,17 @@ int main(int argc, char** argv) {
             goto done;
         }
 
+        memset(bytes_buffer, 0, MAX_BUFFER);
+        buffer_size = 0;
+
         getSingleSampleData(&info, 0);
-        if (encode(argv[2], &info, &bytes_buffer, &buffer_size) != 0) {
+        if (encode(argv[2], &info, bytes_buffer, &buffer_size) != 0) {
             perror("encode failed\n");
             goto done;
         }
 
         // send data
         int result = do_client(argv[4], argv[5], bytes_buffer, buffer_size);
-        free(bytes_buffer);
         if (result != 0) {
             fprintf(stderr, "do_client failed\n");
             goto done;

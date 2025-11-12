@@ -6,8 +6,8 @@
     - Use [tpl v1.6.1](https://github.com/troydhanson/tpl/releases/tag/v1.6.1)
 - This demo use the `A(S(ii$(c#c#)c#c#icv))` format string to encode and decode
 
-### Explain
-#### Encode / Decode
+
+### Encode / Decode
 - Encode
     - Detail could refer to [api concepts - tpl User Guide](https://troydhanson.github.io/tpl/userguide.html#_api_concepts)
     - This demo use structure format which don't need to specify each data for map
@@ -60,7 +60,7 @@
     }
     ```
 
-#### Structure array
+### Structure array
 - Refer to [Arrays - tpl User Guide](https://troydhanson.github.io/tpl/userguide.html#arrays)
 - Use the `A(...)` to surrounding the `S(...)`
 - Encode and decode with a temp structure
@@ -105,6 +105,32 @@
             if (tpl_unpack(tn, 1) == 0) break;
             memcpy((*out_infos) + i, &tmp, sizeof(wifi_softap_info_t));
         }
+        tpl_free(tn);
+        ...
+    }
+    ```
+
+### Stack buffer
+- Use `TPL_MEM | TPL_PREALLOCD` for stack buffer
+- Use `TPL_GETSIZE` to get the size that the dump would require
+    ```c
+    /*
+    * tpl_encode
+    *  - input: wifi_softap_info_t *info
+    *  - output: *out_buffer, *out_size
+    *  - return: 0 on success, -1 on failure
+    */
+    int tpl_encode(wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
+        tpl_node* tn = tpl_map("S(ii$(c#c#)c#c#icv)", info,
+                            (int)sizeof(info->ip_address.ipv4),
+                            (int)sizeof(info->ip_address.ipv6),
+                            (int)sizeof(info->ssid),
+                            (int)sizeof(info->bssid));
+
+        tpl_pack(tn, 0);
+
+        tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, out_buffer, MAX_BUFFER);
+        tpl_dump(tn, TPL_GETSIZE, out_size);
         tpl_free(tn);
         ...
     }

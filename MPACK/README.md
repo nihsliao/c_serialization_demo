@@ -6,8 +6,7 @@
     - 使用 [MPack v1.1.1](https://github.com/ludocode/mpack/releases/tag/v1.1.1)
 - This demo use the `Reader API` and `Expect API` to encode and decode
 
-### Explain
-#### Encode / Decode
+### Encode / Decode
 - Encode
     ```c
     mpack_writer_t writer;
@@ -31,7 +30,7 @@
     mpack_error_t err = mpack_reader_destroy(&reader);
     ```
 
-#### Helper function to read / write a single wifi_softap_info_t structure
+### Helper function to read / write a single wifi_softap_info_t structure
 - Pass the `wifi_softap_info_t` data to writer
     ```c
     /* Helper function to write a single wifi_softap_info_t structure */
@@ -60,7 +59,7 @@
     }
     ```
 
-#### Structure array
+### Structure array
 - The struct array could be accomplished by using nested array api
 - encode `count` number of structures
     ```c
@@ -97,4 +96,30 @@
     mpack_done_array(&reader);// finish reading the outer array
 
     mpack_error_t err = mpack_reader_destroy(&reader);
+    ```
+
+
+### Stack buffer
+- Disable `MPACK_STDLIB` for not using malloc
+    - Add `-D MPACK_STDLIB=0` when compile
+- Replace `mpack_writer_init()` with `mpack_writer_init()`
+- Use `mpack_writer_buffer_used()` to get used size
+    ```c
+    /* ---------- mpack encode / decode ---------- */
+    /*
+    * mpack_encode
+    *  - input: wifi_softap_info_t *info
+    *  - output: *out_buffer, *out_size
+    *  - return: 0 on success, -1 on failure
+    */
+    int mpack_encode(wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
+        mpack_writer_t writer;
+        mpack_writer_init(&writer, (char*)out_buffer, MAX_BUFFER);
+
+        write_single_structure(&writer, info);
+        *out_size = mpack_writer_buffer_used(&writer);
+
+        mpack_error_t err = mpack_writer_destroy(&writer);
+        ...
+    }
     ```

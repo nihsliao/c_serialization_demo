@@ -2,11 +2,11 @@
  *
  * Requires: mpack.h (MPack library)
  * Exports:
- *   int mpack_encode(wifi_softap_info_t *info, void **out_buffer, size_t *out_size);
+ *   int mpack_encode(wifi_softap_info_t *info, void *out_buffer, size_t *out_size);
  *   int mpack_decode(void *buffer, size_t size, wifi_softap_info_t *out_info);
  *
  * Notes:
- * - This implementation uses MPack growable buffer writer (mpack_writer_init_growable)
+ * - This implementation uses MPack buffer writer (mpack_writer_init)
  *   and MPack reader (mpack_reader_init_data).
  * - Schema: array of 9 elements in this exact order:
  *     [ device_count (int32),
@@ -62,7 +62,6 @@ int read_single_structure(mpack_reader_t* reader, wifi_softap_info_t* info) {
 
     /* read an array of 9 elements (fixed-order schema) */
     mpack_expect_array_match(reader, 9);
-    memset(info, 0, sizeof(*info));
 
     info->device_count = mpack_expect_i32(reader);
     info->state = mpack_expect_i32(reader);
@@ -105,32 +104,27 @@ int read_single_structure(mpack_reader_t* reader, wifi_softap_info_t* info) {
 /*
  * mpack_encode
  *  - input: wifi_softap_info_t *info
- *  - output: **out_buffer, *out_size
+ *  - output: *out_buffer, *out_size
  *  - return: 0 on success, -1 on failure
  */
-int mpack_encode(wifi_softap_info_t* info, void** out_buffer, size_t* out_size) {
+int mpack_encode(wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
     if (!info || !out_buffer || !out_size) return -1;
 
-    char* data;
-    size_t size;
     mpack_writer_t writer;
-    /* init growable writer: writer will allocate 'data' and set 'size' */
-    mpack_writer_init_growable(&writer, &data, &size);
+    mpack_writer_init(&writer, (char*)out_buffer, MAX_BUFFER);
 
     if (write_single_structure(&writer, info) != 0) {
         mpack_writer_flag_error(&writer, mpack_error_data);
     }
 
+    *out_size = mpack_writer_buffer_used(&writer);
     /* finalize writer and check error */
     mpack_error_t err = mpack_writer_destroy(&writer);
     if (err != mpack_ok) {
         fprintf(stderr, "mpack: writer error %d\n", err);
-        if (data) free(data);
         return -1;
     }
 
-    *out_buffer = data;
-    *out_size = size;
     return 0;
 }
 
@@ -158,13 +152,11 @@ int mpack_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
     return 0;
 }
 
-int mpack_encode_array(const wifi_softap_info_t* infos, int count, void** out_buffer, size_t* out_size) {
+int mpack_encode_array(const wifi_softap_info_t* infos, int count, void* out_buffer, size_t* out_size) {
     if (!infos || count == 0 || !out_buffer || !out_size) return -1;
 
-    char* data;
-    size_t size;
     mpack_writer_t writer;
-    mpack_writer_init_growable(&writer, &data, &size);
+    mpack_writer_init(&writer, (char*)out_buffer, MAX_BUFFER);
 
     mpack_start_array(&writer, (uint32_t)count);
     for (int i = 0; i < count; i++) {
@@ -175,19 +167,17 @@ int mpack_encode_array(const wifi_softap_info_t* infos, int count, void** out_bu
     }
     mpack_finish_array(&writer);
 
+    *out_size = mpack_writer_buffer_used(&writer);
     mpack_error_t err = mpack_writer_destroy(&writer);
     if (err != mpack_ok) {
         fprintf(stderr, "mpack: writer error %d\n", err);
-        if (data) free(data);
         return -1;
     }
 
-    *out_buffer = data;
-    *out_size = size;
     return 0;
 }
 
-int mpack_decode_array(void* buffer, size_t size, wifi_softap_info_t** out_infos, int* out_count) {
+int mpack_decode_array(void* buffer, size_t size, wifi_softap_info_t* out_infos, int* out_count) {
     if (!buffer || size == 0 || !out_infos || !out_count) return -1;
 
     mpack_reader_t reader;
@@ -199,14 +189,8 @@ int mpack_decode_array(void* buffer, size_t size, wifi_softap_info_t** out_infos
         return -1;
     }
 
-    wifi_softap_info_t* infos = (wifi_softap_info_t*)malloc(sizeof(wifi_softap_info_t) * count);
-    if (!infos) {
-        mpack_reader_destroy(&reader);
-        return -1;
-    }
-
     for (int i = 0; i < count; i++) {
-        if (read_single_structure(&reader, &infos[i]) != 0) {
+        if (read_single_structure(&reader, out_infos + i) != 0) {
             mpack_reader_flag_error(&reader, mpack_error_data);
             break;
         }
@@ -215,11 +199,9 @@ int mpack_decode_array(void* buffer, size_t size, wifi_softap_info_t** out_infos
 
     mpack_error_t err = mpack_reader_destroy(&reader);
     if (err != mpack_ok) {
-        free(infos);
         return -1;
     }
 
-    *out_infos = infos;
     *out_count = count;
     return 0;
 }

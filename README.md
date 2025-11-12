@@ -6,7 +6,17 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 - [mapck](https://github.com/ludocode/mpack)
 - [nanopb](https://github.com/nanopb/nanopb)
 
-### Compare
+## Compare
+### Environment
+- CPU: 12th Gen Intel Core i9-12900K
+- RAM: 64G
+- OS: Ubuntu 20.04.4 LTS
+
+### Table
+- The bytes are the size of the encoded result bytes from different size of structures
+- The nanoseconds are the average time and standard deviation(Stddev) of 300000 executions
+
+#### malloc buffer
 | Library               | tpl                                                | mpack                                              | nanopb                                             |
 | --------------------- | -------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------- |
 | license               | BSD license                                        | MIT license                                        | zlib License                                       |
@@ -15,14 +25,28 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 | array of 2 structure  | 199 bytes<br>Mean: 1131.37 ns<br>Stddev: 185.32 ns | 97 bytes<br>Mean: 318.22 ns<br>Stddev: 248.23 ns   | 110 bytes<br>Mean: 1560.68 ns<br>Stddev: 176.31 ns |
 | array of 10 structure | 791 bytes<br>Mean: 2799.08 ns<br>Stddev: 355.14 ns | 481 bytes<br>Mean: 1124.34 ns<br>Stddev: 385.39 ns | 550 bytes<br>Mean: 6732.55 ns<br>Stddev: 355.55 ns |
 
-- The micorseconds are the average time and standard deviation(Stddev) of 300000 executions
-
-#### Coefficient of Variation
+##### Coefficient of Variation
 | Library               | tpl    | mpack        | nanopb |
 | --------------------- | ------ | ------------ | ------ |
 | single structure      | 6.88%  | 11.52%       | 6.00%  |
 | array of 2 structure  | 16.38% | ***78.01%*** | 11.30% |
 | array of 10 structure | 12.69% | ***34.28%*** | 6.20%  |
+
+#### stack buffer
+| Library               | tpl                                               | mpack                                            | nanopb                                             |
+| --------------------- | ------------------------------------------------- | ------------------------------------------------ | -------------------------------------------------- |
+| license               | BSD license                                       | MIT license                                      | zlib License                                       |
+| serializtion format   | tpl image                                         | MessagePack                                      | protobuf                                           |
+| single structure      | 118 bytes<br>Mean: 706.13 ns<br>Stddev: 28.68 ns  | 48 bytes<br>Mean: 116.90 ns<br>Stddev: 12.12 ns  | 53 bytes<br>Mean: 552.10 ns<br>Stddev: 33.00 ns    |
+| array of 2 structure  | 199 bytes<br>Mean: 1014.94 ns<br>Stddev: 22.79 ns | 97 bytes<br>Mean: 214.71 ns<br>Stddev: 9.10 ns   | 110 bytes<br>Mean: 1478.16 ns<br>Stddev: 36.23 ns  |
+| array of 10 structure | 791 bytes<br>Mean: 2376.62 ns<br>Stddev: 46.58 ns | 481 bytes<br>Mean: 837.03 ns<br>Stddev: 36.99 ns | 550 bytes<br>Mean: 6768.58 ns<br>Stddev: 129.90 ns |
+
+##### Coefficient of Variation
+| Library               | tpl   | mpack  | nanopb |
+| --------------------- | ----- | ------ | ------ |
+| single structure      | 4.06% | 10.37% | 5.98%  |
+| array of 2 structure  | 2.25% | 4.24%  | 2.45%  |
+| array of 10 structure | 1.96% | 4.42%  | 1.92%  |
 
 ## Usage
 ```shell
@@ -112,6 +136,8 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
  * Note: this function accepts one client connection and returns its payload.
  */
 static int socket_receive(const char* portstr, void** buffer, size_t* size);
+// for stack buffer
+static int socket_receive(const char* portstr, void* buffer, size_t* size);
 ```
 
 ### encode / decode single structure
@@ -122,6 +148,8 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size);
  * returns 0 on success
 */
 static int encode(char* library, wifi_softap_info_t* info, void** out_buffer, size_t* out_size);
+// for stack buffer
+static int encode(char* library, wifi_softap_info_t* info, void* out_buffer, size_t* out_size);
 
 /* decode the wifi_softap_info_t struct 
  * library: "tpl", "mpack", "nanopb"
@@ -142,6 +170,8 @@ static int decode(char* library, void* buf, size_t sz, wifi_softap_info_t* out_i
  * returns 0 on success
  */
 static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void** out_buffer, size_t* out_size);
+// for stack buffer
+static int encode_array(char* library, const wifi_softap_info_t* infos, int count, void* out_buffer, size_t* out_size);
 
 /* decode array of wifi_softap_info_t structs
  * library: "tpl", "mpack", "nanopb"
@@ -151,4 +181,6 @@ static int encode_array(char* library, const wifi_softap_info_t* infos, int coun
  * returns 0 on success
  */
 static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t** out_infos, int* out_count);
+// for stack buffer
+static int decode_array(char* library, void* buf, size_t sz, wifi_softap_info_t* out_infos, int* out_count);
 ```

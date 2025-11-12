@@ -5,7 +5,7 @@ TPL = TPL/tpl.c
 CFLAGS += -ITPL
 
 MPACK = MPACK/mpack/*.c
-CFLAGS += -IMPACK/mpack
+CFLAGS += -IMPACK/mpack -D MPACK_STDLIB=0
 
 NANOPB = NANOPB/nanopb/*.c
 CFLAGS += -INANOPB/nanopb

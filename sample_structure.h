@@ -189,13 +189,13 @@ cleanup:
 /*
  * socket_receive
  *  - portstr: port to listen
- *  - buffer: pointer to malloc'd buffer containing payload (returned)
+ *  - buffer: pointer to buffer containing payload (returned)
  *  - size: payload size returned
  *  - returns 0 on success, -1 on failure
  *
  * Note: this function accepts one client connection and returns its payload.
  */
-static int socket_receive(const char* portstr, void** buffer, size_t* size) {
+static int socket_receive(const char* portstr, void* buffer, size_t* size) {
     int ret = -1;
     if (!portstr || !buffer || !size) return ret;
     int port = atoi(portstr);
@@ -247,19 +247,12 @@ static int socket_receive(const char* portstr, void** buffer, size_t* size) {
         goto cleanup_all;
     }
 
-    void* buf = malloc(*size);
-    if (!buf) {
-        fprintf(stderr, "malloc fail\n");
-        goto cleanup_all;
-    }
-
-    if (recv_all(csock, buf, *size) != 0) {
+    if (recv_all(csock, buffer, *size) != 0) {
         perror("recv payload");
         goto cleanup_all;
     }
 
     printf("Server: expecting %zu bytes\n", *size);
-    *buffer = buf;
     ret = 0;
 
 cleanup_all:
@@ -295,11 +288,11 @@ int do_client(const char* host, const char* portstr, void* buffer, size_t size) 
 /*
  * do_server
  *  - portstr to listen
- *  - out_buffer: pointer to malloc'd buffer containing payload (returned)
+ *  - out_buffer: pointer to buffer containing payload (returned)
  *  - out_size: payload size returned
  *  - returns 0 on success
  */
-int do_server(const char* portstr, void** out_buffer, size_t* out_size) {
+int do_server(const char* portstr, void* out_buffer, size_t* out_size) {
     if (!portstr || !out_buffer || !out_size) return -1;
 
     int result = socket_receive(portstr, out_buffer, out_size);
