@@ -57,7 +57,7 @@ static void getSingleSampleData(wifi_softap_info_t* info, int count) {
     /* prepare a sample payload */
     memset(info, 0, sizeof(*info));
     info->device_count = 2 + count;
-    info->state = (int32_t)WIFI_AP_STATE_ENABLED;
+    info->state = WIFI_AP_STATE_ENABLED;
     info->ip_address.ipv4[0] = 192;
     info->ip_address.ipv4[1] = 168;
     info->ip_address.ipv4[2] = 1 + count;
@@ -66,7 +66,7 @@ static void getSingleSampleData(wifi_softap_info_t* info, int count) {
     strncpy(info->ssid, "MyAP", sizeof(info->ssid) - 1);
     uint8_t mac[WIFI_BT_MAC_ADDRESS_LEN] = {0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x01};
     memcpy(info->bssid, mac, WIFI_BT_MAC_ADDRESS_LEN);
-    info->security = (int32_t)WIFI_SECURITY_TYPE_WPA;
+    info->security = WIFI_SECURITY_TYPE_WPA;
     info->channel = 6 + count;
     info->frequency = 2437 + (count * 5);
 }
@@ -101,7 +101,7 @@ static void print_wifi_softap_info(const wifi_softap_info_t* info) {
 
 /* helper: send all */
 static int send_all(int fd, const void* buf, size_t len) {
-    const uint8_t* p = buf;
+    const uint8_t* p = (const uint8_t*) buf;
     size_t sent = 0;
     while (sent < len) {
         ssize_t s = send(fd, p + sent, len - sent, 0);
@@ -117,7 +117,7 @@ static int send_all(int fd, const void* buf, size_t len) {
 
 /* helper: recv exactly len */
 static int recv_all(int fd, void* buf, size_t len) {
-    uint8_t* p = buf;
+    uint8_t* p = (uint8_t*) buf;
     size_t got = 0;
     while (got < len) {
         ssize_t r = recv(fd, p + got, len - got, 0);
@@ -145,6 +145,7 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
     /* Create socket */
     int port = atoi(portstr);
     struct sockaddr_in addr;
+    uint64_t netlen;
     int sock = socket(AF_INET, SOCK_STREAM, 0);
 
     if (sock < 0) {
@@ -167,7 +168,7 @@ static int socket_send(const char* host, const char* portstr, void* buffer, size
     }
 
     /* send 8-byte length in network order, then payload */
-    uint64_t netlen = htobe64((uint64_t)size);
+    netlen = htobe64((uint64_t)size);
     if (send_all(sock, &netlen, sizeof(netlen)) != 0) {
         perror("send len");
         goto cleanup;

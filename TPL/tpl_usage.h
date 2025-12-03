@@ -1,5 +1,11 @@
+#ifndef TPL_USAGE_H
+#define TPL_USAGE_H
+
 #include "../sample_structure.h"
 #include "tpl.h"
+
+char* map_structure_fmt = (char*)"S(ii$(c#c#)c#c#icv)"; /* wifi_softap_info_t format */
+char* map_structure_array_fmt = (char*)"A(S(ii$(c#c#)c#c#icv))"; /* array of wifi_softap_info_t format */
 
 /* ---------- tpl encode / decode ---------- */
 
@@ -11,10 +17,11 @@
  */
 int tpl_encode(wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
     int ret = -1;
+    int result = -1;
     if (!info || !out_buffer || !out_size) return ret;
 
     /* Step 1. setup tpl map, format: wifi_softap_info_t */
-    tpl_node* tn = tpl_map("S(ii$(c#c#)c#c#icv)", info,
+    tpl_node* tn = tpl_map(map_structure_fmt, info,
                            (int)sizeof(info->ip_address.ipv4),
                            (int)sizeof(info->ip_address.ipv6),
                            (int)sizeof(info->ssid),
@@ -30,7 +37,7 @@ int tpl_encode(wifi_softap_info_t* info, void* out_buffer, size_t* out_size) {
         goto cleanup;
     }
 
-    int result = tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, out_buffer, MAX_BUFFER);
+    result = tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, out_buffer, MAX_BUFFER);
     if (result != 0) {
         fprintf(stderr, "tpl_dump failed\n");
         goto cleanup;
@@ -57,7 +64,7 @@ int tpl_decode(void* buffer, size_t size, wifi_softap_info_t* out_info) {
     int ret = -1;
     if (!buffer || size == 0 || !out_info) return ret;
 
-    tpl_node* tn = tpl_map("S(ii$(c#c#)c#c#icv)", out_info,
+    tpl_node* tn = tpl_map(map_structure_fmt, out_info,
                            (int)sizeof(out_info->ip_address.ipv4),
                            (int)sizeof(out_info->ip_address.ipv6),
                            (int)sizeof(out_info->ssid),
@@ -80,11 +87,12 @@ cleanup:
 
 int tpl_encode_array(const wifi_softap_info_t* infos, int count, void* out_buffer, size_t* out_size) {
     int ret = -1;
+    int result = -1;
     if (!infos || count <= 0 || !out_buffer || !out_size) return ret;
     wifi_softap_info_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
-    tpl_node* tn = tpl_map("A(S(ii$(c#c#)c#c#icv))", &tmp,
+    tpl_node* tn = tpl_map(map_structure_array_fmt, &tmp,
                  sizeof(tmp.ip_address.ipv4),
                  sizeof(tmp.ip_address.ipv6),
                  sizeof(tmp.ssid),
@@ -95,15 +103,15 @@ int tpl_encode_array(const wifi_softap_info_t* infos, int count, void* out_buffe
         goto cleanup;
     }
 
-    for (size_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
         memcpy(&tmp, &infos[i], sizeof(wifi_softap_info_t));
         if (tpl_pack(tn, 1) != 0) {
-            fprintf(stderr, "tpl_pack struct %ld failed\n", i);
+            fprintf(stderr, "tpl_pack struct %d failed\n", i);
             goto cleanup;
         }
     }
 
-    int result = tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, out_buffer, MAX_BUFFER);
+    result = tpl_dump(tn, TPL_MEM | TPL_PREALLOCD, out_buffer, MAX_BUFFER);
     if (result != 0) {
         fprintf(stderr, "tpl_dump failed\n");
         goto cleanup;
@@ -121,13 +129,13 @@ cleanup:
 }
 
 int tpl_decode_array(const void* buf, size_t size, wifi_softap_info_t* out_infos, int* out_count) {
-    int ret = -1;
+    int ret = -1, count = 0, i = 0;
     if (!buf || size == 0 || !out_infos || !out_count) return ret;
 
     wifi_softap_info_t tmp;
     memset(&tmp, 0, sizeof(tmp));
 
-    tpl_node* tn = tpl_map("A(S(ii$(c#c#)c#c#icv))", &tmp,
+    tpl_node* tn = tpl_map(map_structure_array_fmt, &tmp,
                  sizeof(tmp.ip_address.ipv4),
                  sizeof(tmp.ip_address.ipv6),
                  sizeof(tmp.ssid),
@@ -143,13 +151,13 @@ int tpl_decode_array(const void* buf, size_t size, wifi_softap_info_t* out_infos
         goto cleanup;
     }
 
-    int count = tpl_Alen(tn, 1);
+    count = tpl_Alen(tn, 1);
     if (count <= 0) {
         fprintf(stderr, "invalid array length %d\n", count);
         goto cleanup;
     }
 
-    int i = 0;
+    i = 0;
     while (tpl_unpack(tn, 1) > 0) {
         memcpy(out_infos + i, &tmp, sizeof(wifi_softap_info_t));
         i++;
@@ -162,3 +170,5 @@ cleanup:
     if (tn) tpl_free(tn);
     return ret;
 }
+
+#endif

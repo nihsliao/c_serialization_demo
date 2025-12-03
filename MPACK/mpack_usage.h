@@ -64,7 +64,7 @@ int read_single_structure(mpack_reader_t* reader, wifi_softap_info_t* info) {
     mpack_expect_array_match(reader, 9);
 
     info->device_count = mpack_expect_i32(reader);
-    info->state = mpack_expect_i32(reader);
+    info->state = (wifi_softap_state_t)mpack_expect_i32(reader);
 
     char buf[WIFI_SSID_MAX_LEN];
     size_t binlen = mpack_expect_bin_buf(reader, buf, sizeof(buf));
@@ -92,7 +92,7 @@ int read_single_structure(mpack_reader_t* reader, wifi_softap_info_t* info) {
     }
     memcpy(info->bssid, buf, binlen);
 
-    info->security = mpack_expect_i32(reader);
+    info->security = (security_type_t)mpack_expect_i32(reader);
     info->channel = mpack_expect_u8(reader);
     info->frequency = mpack_expect_u16(reader);
 

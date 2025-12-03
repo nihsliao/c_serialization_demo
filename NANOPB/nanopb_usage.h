@@ -54,7 +54,7 @@ int parse_wifi_WifiSoftAPInfo(wifi_WifiSoftAPInfo* message, wifi_softap_info_t* 
     if (!message || !info) return -1;
 
     info->device_count = message->device_count;
-    info->state = message->state;
+    info->state = (wifi_softap_state_t)message->state;
 
     if (message->has_ip_address) {
         size_t ipv4_size = (size_t)message->ip_address.ipv4.size;
@@ -73,7 +73,7 @@ int parse_wifi_WifiSoftAPInfo(wifi_WifiSoftAPInfo* message, wifi_softap_info_t* 
 
     memcpy(info->bssid, message->bssid.bytes, sizeof(info->bssid));
 
-    info->security = message->security;
+    info->security = (security_type_t)message->security;
     info->channel = (uint8_t)message->channel;
     info->frequency = message->frequency;
 
@@ -97,7 +97,7 @@ int nanopb_encode(const wifi_softap_info_t* info, void* out_buffer, size_t* out_
     }
 
     /* create a stream that writes to our buffer */
-    pb_ostream_t stream = pb_ostream_from_buffer(out_buffer, MAX_BUFFER);
+    pb_ostream_t stream = pb_ostream_from_buffer((unsigned char*)out_buffer, MAX_BUFFER);
     if (!pb_encode(&stream, wifi_WifiSoftAPInfo_fields, &message)) {
         fprintf(stderr, "Nanopb encode failed: %s\n", PB_GET_ERROR(&stream));
         return -1;
@@ -142,7 +142,7 @@ int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void* out_bu
 
     wifi_WifiSoftAPList list = wifi_WifiSoftAPList_init_zero;
 
-    for (size_t i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++) {
         if (parse_wifi_softap_info(&infos[i], &list.ap_list[i]) != 0) {
             return -1;
         }
@@ -150,7 +150,7 @@ int nanopb_encode_array(const wifi_softap_info_t* infos, int count, void* out_bu
     list.ap_list_count = count;
 
     /* create a stream that writes to our buffer */
-    pb_ostream_t stream = pb_ostream_from_buffer(out_buffer, MAX_BUFFER);
+    pb_ostream_t stream = pb_ostream_from_buffer((unsigned char*)out_buffer, MAX_BUFFER);
 
     if (!pb_encode(&stream, wifi_WifiSoftAPList_fields, &list)) {
         fprintf(stderr, "Nanopb encode failed: %s\n", PB_GET_ERROR(&stream));
