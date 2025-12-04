@@ -1,7 +1,7 @@
 # serialization demo for c with libraries
 Use same sample structure and encode / decode by the libries, and send the byte through socket
 
-## Library
+## Serialization Library
 - [tpl](https://github.com/troydhanson/tpl)
 - [mapck](https://github.com/ludocode/mpack)
 - [nanopb](https://github.com/nanopb/nanopb)
@@ -49,6 +49,7 @@ Use same sample structure and encode / decode by the libries, and send the byte 
 | array of 10 structure | 1.96% | 4.42%  | 1.92%  |
 
 ## Usage
+### Single run demo
 ```shell
 usage: ./serialize_demo SHOW_STRUCTURE(0/1) LIBRARY COMMAND
 LIBRARY: tpl|mpack|nanopb
@@ -75,6 +76,206 @@ graph TD;
     socket_send-->|socket communication|socket_receive[Socket receive]:::socket;
     socket_receive[Socket receive]-->|server|buffer2[*buffer + buffer_size]
     buffer2-->|library decode|result[wifi_softap_info_t result]
+```
+
+### Socket Client-Server Demo
+- Similar to the [Single run demo](#single-run-demo), but uses `threads` and a `queue library` to handle the socket implementation
+- The queue library is [moodycamel::ConcurrentQueue v1.0.4](https://github.com/cameron314/concurrentqueue)
+    - `InputQueue`: Passes data to the handler thread for encoding or decoding
+    - `OutputQueue`: Passes data for the socket writer thread
+- Main Thread: Starts both the handler and socket threads, then awaits a user input command
+- Management of the handler thread: **ThreadManager::startHandler()**, **ThreadManager::stopHandler()**
+- Management of the socket thread: **ThreadManager::startSocket(char\*\* argv)**, **ThreadManager::stopSocket()**
+    - Responds by starting a *reader* or *writer* thread based on whether the application is a server or a client
+- Stopping all threads: **ThreadManager::stopThreads()**
+
+#### Server
+- If the user does not input `0` to exit, the server will wait for a client to connect and attempt to read and decode data
+- It will retry to accept the next connection after a previous client has disconnected
+- Queue:
+    - **InputQueue**: Passes incoming data from the socket to the handler thread for decoding
+- Threads:
+    - Main Thread: Only accepts `UserCommand::Exit (0)`
+    - Handler Thread:
+        - Runnable: **ThreadManager::serverHandler()**
+        - Awaits dequeueing from the **inputQueue** with a timeout(1s), and stays alive if **isHandlerRunning** is `true`
+        - Responds by decoding using `static int decode(const char* library, void* buf, size_t sz, wifi_softap_info_t* out_info)` and showing the result
+    - Socket Thread:
+        - Runnable: **ThreadManager::runServer(char\*\* argv)**
+        - Awaits a client connection and starts the reader thread; the thread keeps alive if the user does not input `UserCommand::EXIT`
+    - Reader Thread:
+        - Runnable: **ThreadManager::socketReceiver()**
+        - Receives the **commandId**, **buffer size** of the data, and the **data** in order
+
+#### Client
+- Encodes a sample structure based on the user input command and sends it to the server
+- Queue:
+    - **InputQueue**: Passes the user input command to the handler thread for encoding
+    - **outputQueue**: Passes encoded data from the handler thread to the writer thread for sending
+- Threads:
+    - Main Thread: Accepts commands from `UserCommand::Exit (0)` to `UserCommand::NANOPB_TEN_STRUCTURES_ARRAY (9)`
+    - Handler Thread:
+        - Runnable: **ThreadManager::clientHandler()**
+        - Awaits dequeueing from the **inputQueue** with a timeout(1s), and stays alive if **isHandlerRunning** is `true`
+        - Responds by encoding using`static int encode(const char* library, wifi_softap_info_t* info, void* out_buffer, size_t* out_size)`
+    - Socket Thread:
+        - Runnable: **ThreadManager::runClient(char\*\* argv)**
+        - Connects to the server and starts the writer thread; the thread keeps alive if the socket is still working or the user does not input `UserCommand::EXIT`
+    - Writer Thread:
+        - Runnable: **ThreadManager::socketWriter()**
+        - Awaits dequeueing from the **inputQueue** with a timeout(1s), then sends the **commandId**, **buffer size** of the data, and the **data** in order
+
+#### Known Issues
+- The server is currently blocked by the accept() call of the socket thread after the user inputs 0 to exit
+- The client does not terminate after the server disconnects, and would crash if it tries to write to the server at that point
+
+#### How to Run
+```shell
+usage: ./serialize_demo_socket SHOW_STRUCTURE(0/1) <server PORT|client HOST PORT>
+
+# server
+./serialize_demo_socket 1 server 8888
+(getNextCommandID) Waiting for command... (0:Exit)
+
+# client
+./serialize_demo_socket 1 client 127.0.0.1 8888
+(getNextCommandID) Waiting for command... (0:Exit,
+ TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array,
+ MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array,
+ NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array)
+```
+
+#### Graphic
+#### FlowChart
+```mermaid
+flowchart TB
+classDef thread fill:#CFD,color:#777,font-weight:bold
+classDef server stroke-width:4px,stroke:#ACF
+classDef client stroke-width:4px,stroke:#FDA
+
+startHandler["startHandler()"]
+serverHandler["serverHandler()"]:::thread
+serverHandler:::server
+clientHandler["clientHandler()"]:::thread
+clientHandler:::client
+startSocket["startSocket(char\*\* argv)"]
+runServer["runServer(char\*\* argv)"]:::thread
+runServer:::server
+runClient["runClient(char\*\* argv)"]:::thread
+runClient:::client
+userInput["getNextCommandID()"]
+inputUpdate["handleCommandUpdated()"]
+isExit{"UserCommand::Exit?"}
+enqueueCommand["enqueue command to inputQueue"]
+enqueueCommand:::server
+startReaderThread["readerThread = socketReceiver()"]:::thread
+startReaderThread:::server
+serverStop{
+Socket stop
+OR
+user stop}
+readerJoin["readerThread.join()"]:::server
+startWriterThread["writerThread = socketReceiver()"]:::thread
+startWriterThread:::client
+clientStop{Socket stop}
+writerJoin["writerThread.join()"]:::client
+
+%% START the flowChart
+subgraph mainP[Main thread]
+    main["main()"]-->startHandler
+    subgraph handler["startHandler()"]
+        startHandler--Client-->clientHandler
+        startHandler--Server-->serverHandler
+    end
+
+    startHandler-->startSocket
+    startSocket-->userInput
+
+    subgraph whileInput[ ]
+        userInput--Check legal-->inputUpdate
+        inputUpdate-->isExit
+        inputUpdate--Server-->enqueueCommand
+        enqueueCommand-->isExit
+        isExit--No -->userInput
+    end
+
+    isExit--Yes-->stopSocket["stopSocket()"]
+
+    subgraph stopP["stopThreads()"]
+        stopSocket-->stopHandler["stopHandler()"]
+        stopHandler-->socketClose["close socket"]
+    end
+    serverHandler--join-->stopHandler
+    clientHandler--join-->stopHandler
+    socketClose-->return["return"]
+end
+
+startSocket--Server-->runServer
+startSocket--Client-->runClient
+
+subgraph sreverSocketThread[Server Socket Thread]
+    runServer-->accept["accept(lsock, NULL, NULL)"]
+    accept-->startReaderThread
+    startReaderThread-->serverStop
+    serverStop--no -->sleep["Sleep 1s"]
+    sleep-->serverStop
+    serverStop--yes-->readerJoin
+    startReaderThread--join-->readerJoin
+    readerJoin-->s_sclose["close socket"]
+end
+
+subgraph clientSocketThread[Client Socket Thread]
+    runClient-->connect["connect(sock, (struct sockaddr*)&addr, sizeof(addr)"]
+    connect-->startWriterThread
+    startWriterThread-->clientStop
+    clientStop--no -->sleep_c["Sleep 1s"]
+    sleep_c-->clientStop
+    clientStop--yes-->writerJoin
+    startWriterThread--join-->writerJoin
+    writerJoin-->c_sclose["close socket"]
+end
+s_sclose--join-->stopSocket
+c_sclose--join-->stopSocket
+```
+
+#### Sequence Diagram
+```mermaid
+sequenceDiagram
+    Client.main->>Client.ThreadManager: startHandler()
+    Client.ThreadManager->>+Client.HandlerThread: clientHandler()
+    Client.main->>+Client.ThreadManager: startSocket()
+
+    Client.ThreadManager->>+Client.WriterThread:
+    loop if user not exit
+        Client.main->>Client.main: get legal command
+        Client.main-)Client.ThreadManager: update user command
+        Client.ThreadManager-)Client.HandlerThread: pass data with inputQueue
+    end
+
+
+    loop if handler alive
+        Client.HandlerThread->>Client.HandlerThread: no element in inputQueue
+        Client.HandlerThread->>Client.WriterThread: pass encoded data with outputQueue
+    end
+
+    loop if socket alive
+        Client.WriterThread->>Client.WriterThread: no element in outputQueue
+        Client.WriterThread->>Server.ReaderThread: pass commandId, len, buffer
+    end
+
+    Server.ReaderThread->>Server.HandlerThread: pass data with inputQueue
+
+    loop if handler alive
+        Server.HandlerThread->>Server.HandlerThread: no element in inputQueue
+        Server.HandlerThread->>Server.HandlerThread: decode and show result
+    end
+
+    Client.main->>Client.ThreadManager: stopSocket()
+    Client.ThreadManager--)Client.WriterThread: stop
+    Client.WriterThread--)-Client.main:
+    Client.main->>Client.ThreadManager: stopHandler()
+    Client.ThreadManager--)Client.HandlerThread: stop
+    Client.HandlerThread--)-Client.main:
 ```
 
 ## Demo structure
