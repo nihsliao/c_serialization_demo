@@ -7,6 +7,7 @@
 #include <functional>
 #include <unordered_map>
 #include <iostream>
+#include <poll.h>
 
 #include "sample_structure.h"
 #include "apis.h"
@@ -222,6 +223,8 @@ class ThreadManager {
         int lsock;
         struct sockaddr_in addr;
         int opt = 1;
+        struct pollfd pfd = {};
+        int pollCount = 0;
 
         printf("(runServer) start...\n");
         lsock = socket(AF_INET, SOCK_STREAM, 0);
@@ -251,30 +254,45 @@ class ThreadManager {
         }
         printf("Server listening on %d ...\n", port);
 
+        pfd.fd = lsock;
+        pfd.events = POLLIN;
 
         while (currentCommandId.load() != UserCommand::EXIT) {
             // accept a client connection
-            printf("Waiting for client connection ...\n");
-            sock = accept(lsock, NULL, NULL);
-            if (shouldTerminate) {
-                printf("Socket accepted but terminated by user input\n");
-                goto cleanup_sock;
-            }
-            if (sock < 0) {
-                perror("accept fail");
-                goto cleanup_sock;
+            pollCount = poll(&pfd, 1, 1000);
+            if (pollCount == -1) {
+                perror("poll fail");
+                goto cleanup_lsock;
+            } else if (pollCount == 0) {
+                // timeout, continue to check for exit condition
+                continue;
             }
 
-            isSocketRunning = true;
-            readerThread = std::thread([this]() {
-                socketReceiver();
-            });
+            printf("Got client connection\n");
+            if (pfd.revents & (POLLIN | POLLHUP)) {
+                if (pfd.fd == lsock) {
+                    sock = accept(lsock, NULL, NULL);
+                    if (shouldTerminate) {
+                        printf("Socket accepted but terminated by user input\n");
+                        goto cleanup_sock;
+                    }
+                    if (sock < 0) {
+                        perror("accept fail");
+                        goto cleanup_sock;
+                    }
 
-            while (isSocketRunning && currentCommandId.load() != UserCommand::EXIT) {
-                this_thread::sleep_for(chrono::seconds(1));
+                    isSocketRunning = true;
+                    readerThread = std::thread([this]() {
+                        socketReceiver();
+                    });
+
+                    while (isSocketRunning && currentCommandId.load() != UserCommand::EXIT) {
+                        this_thread::sleep_for(chrono::seconds(1));
+                    }
+                    if (readerThread.joinable()) readerThread.join();
+                    printf("(runServer) Socket has closed. Retry later...\n");
+                }
             }
-            if (readerThread.joinable()) readerThread.join();
-            printf("(runServer) Socket has closed. Retry later...\n");
         cleanup_sock:
             handleSocketClosed();
         }

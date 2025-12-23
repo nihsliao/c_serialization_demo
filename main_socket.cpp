@@ -15,9 +15,6 @@ int SHOW_CAL = 0;
 uint8_t bytesBuffer[MAX_BUFFER] = {0};
 size_t bufferSize = 0;
 
-
-
-
 static void print_usage(int argc, char** argv) {
     if (argc >= 3) {
         if (strcmp(argv[2], "server") == 0) {

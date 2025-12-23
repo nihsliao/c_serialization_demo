@@ -5,6 +5,7 @@ CXXFLAGS=-Wall -O2 -g -std=c++17 -pthread
 
 C_LIBS=TPL/tpl.c MPACK/mpack/*.c NANOPB/nanopb/*.c
 C_LIBS_TARGET = c_libs.a
+C_LIBS_DIRS = out
 
 CLIBSFLAGS += -ITPL
 CLIBSFLAGS += -IMPACK/mpack -D MPACK_STDLIB=0
@@ -23,7 +24,9 @@ all: $(TARGET) $(TARGET_SOCKET)
 
 $(C_LIBS_TARGET): $(C_LIBS)
 	$(CC) $(CFLAGS) $(CLIBSFLAGS) -c $(C_LIBS)
-	ar rcs $(C_LIBS_TARGET) *.o
+	mkdir $(C_LIBS_DIRS)
+	mv *.o $(C_LIBS_DIRS)/
+	ar rcs $(C_LIBS_TARGET) $(C_LIBS_DIRS)/*.o
 
 $(TARGET): $(C_LIBS_TARGET) $(SRC)
 	$(CC) $(CFLAGS) $(CLIBSFLAGS) -o $@ $(SRC) $(C_LIBS_TARGET) $(LDLIBS)
@@ -33,4 +36,4 @@ $(TARGET_SOCKET): $(C_LIBS_TARGET) $(SRC_SOCKET)
 
 
 clean:
-	rm -f *.o $(C_LIBS_TARGET) $(TARGET) $(TARGET_SOCKET)
+	rm -rf $(C_LIBS_DIRS) $(C_LIBS_TARGET) $(TARGET) $(TARGET_SOCKET)
