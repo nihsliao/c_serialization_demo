@@ -7,6 +7,7 @@ using namespace moodycamel;
 using Clock = std::chrono::high_resolution_clock;
 
 enum class UserCommand {
+    TIMEOUT = -2,
     UNINITIAL = -1,
     EXIT = 0,
     TPL_SINGLE_STRUCTURE,

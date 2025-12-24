@@ -125,9 +125,10 @@ graph TD;
         - Runnable: **ThreadManager::socketWriter()**
         - Awaits dequeueing from the **inputQueue** with a timeout(1s), then sends the **commandId**, **buffer size** of the data, and the **data** in order
 
-#### Known Issues
-- The server is currently blocked by the accept() call of the socket thread after the user inputs 0 to exit
-- The client does not terminate after the server disconnects, and would crash if it tries to write to the server at that point
+#### poll() timeout
+- The server uses `poll()` with a 1-second timeout to check for remote connections, so that user input (0: Exit) does not get blocked by `accept()`
+- The client uses `poll()` with a 500-millisecond timeout to detect whether the server has closed the connection, in case user input blocks termination
+- A readerThread is added on the client side to monitor the socket status from the server
 
 #### How to Run
 ```shell

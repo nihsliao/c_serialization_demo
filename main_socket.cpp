@@ -31,25 +31,41 @@ static void print_usage(int argc, char** argv) {
 
 UserCommand getNextCommandID(bool isServer) {
     int result = -1;
+    struct pollfd pfd{};
+    pfd.fd = STDIN_FILENO;
+    pfd.events = POLLIN;
 
-    while (result < 0) {
-        cout << "(getNextCommandID) Waiting for command... (0:Exit";
-        if (!isServer) {
-            cout << ",\n TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array";
-            cout << ",\n MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array";
-            cout << ",\n NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array";
-        } 
-        cout << ")" << endl;
-        cin >> result;
-        if (isServer && result != 0) result = -1;
-        else if (result <= (int)UserCommand::NANOPB_TEN_STRUCTURES_ARRAY) break;
+    int ret = poll(&pfd, 1, 500);
+    if (ret == 0) {
+        // timeout
+        return UserCommand::TIMEOUT;
     }
+    if (ret < 0) {
+        perror("poll");
+        return UserCommand::UNINITIAL;
+    }
+
+    char buf[64];
+    int n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+    if (n >= 32) {
+        std::cerr << "Input too long, max 32 characters." << std::endl;
+        return UserCommand::UNINITIAL;
+    }
+
+    buf[n] = '\0';
+    result = atoi(buf);
+
+    std::cout << "Input: " << result << "\n";
+
+    if (isServer && result != 0) result = -1;
+    else if (result > (int)UserCommand::NANOPB_TEN_STRUCTURES_ARRAY || result < 0) result = -1;
 
     return (UserCommand)result;
 }
 
 int main(int argc, char** argv) {
     int ret = -1;
+    UserCommand userInput = UserCommand::UNINITIAL;
     if (argc < 4) {
         print_usage(argc, argv);
         return ret;
@@ -63,14 +79,26 @@ int main(int argc, char** argv) {
 
         manager.startHandler();
         manager.startSocket(argv);
-        
+
         do {
-            manager.currentCommandId = getNextCommandID(isServer);
-            cout << "(main) Current Command ID: " << (int)manager.currentCommandId.load() << endl;
+            if (userInput != UserCommand::TIMEOUT) {
+                cout << "(getNextCommandID) Waiting for command... (0:Exit";
+                if (!isServer) {
+                    cout << ",\n TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array";
+                    cout << ",\n MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array";
+                    cout << ",\n NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array";
+                }
+                cout << ")" << endl;
+            }
+
+            userInput = getNextCommandID(isServer);
             if (manager.getShouldTerminate()) {
                 cout << "The socket has terminated. Exit process...";
                 break;
-            }
+            } else if (userInput == UserCommand::TIMEOUT) continue;
+            manager.currentCommandId.store(userInput);
+            cout << "(main) Current Command ID: " << (int)manager.currentCommandId.load() << endl;
+
             manager.handleCommandUpdated();
         } while (manager.currentCommandId.load() != UserCommand::EXIT);
 

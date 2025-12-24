@@ -372,10 +372,55 @@ class ThreadManager {
             socketWriter();
         });
 
+        readerThread = std::thread([this]() {
+            int pollCount = 0;
+            struct pollfd pfd{};
+            pfd.fd = sock;
+            pfd.events = POLLIN | POLLHUP | POLLERR;
+
+            while (isSocketRunning) {
+                pollCount = poll(&pfd, 1, -1);
+                if (pollCount <= 0) {
+                    perror("poll fail");
+                    isSocketRunning = false;
+                    break;
+                }
+
+                if (pfd.revents & (POLLHUP | POLLERR)) {
+                    printf("Socket hang up or error\n");
+                    isSocketRunning = false;
+                    break;
+                } else if (pfd.revents & POLLIN) {
+                    char tmp[1];
+                    int n = recv(sock, tmp, sizeof(tmp), MSG_DONTWAIT);
+
+                    if (n == 0) {
+                        // server closed gracefully
+                        printf("Server closed connection\n");
+                        isSocketRunning = false;
+                        break;
+                    }
+
+                    if (n < 0) {
+                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                            // nothing to read, false alarm
+                            continue;
+                        }
+                        perror("recv error");
+                        isSocketRunning = false;
+                        break;
+                    }
+                    // n > 0 : server sent data
+                    // since client "doesn't read", discard it
+                }
+            }
+        });
+
         while (isSocketRunning) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         if (writerThread.joinable()) writerThread.join();
+        if (readerThread.joinable()) readerThread.join();
         printf("(runClient) Socket has closed. Ending...\n");
     socket_close:
         handleSocketClosed();
