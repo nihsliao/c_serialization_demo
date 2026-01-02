@@ -126,9 +126,46 @@ graph TD;
         - Awaits dequeueing from the **inputQueue** with a timeout(1s), then sends the **commandId**, **buffer size** of the data, and the **data** in order
 
 #### poll() timeout
-- The server uses `poll()` with a 1-second timeout to check for remote connections, so that user input (0: Exit) does not get blocked by `accept()`
-- The client uses `poll()` with a 500-millisecond timeout to detect whether the server has closed the connection, in case user input blocks termination
-- A readerThread is added on the client side to monitor the socket status from the server
+- Commit [966c49d](https://github.com/nihsliao/c_serialization_demo/commit/966c49dfe67e09e1c8b99ebe1f1fba6b0bb74bf3) and [44ebfba](https://github.com/nihsliao/c_serialization_demo/commit/44ebfbafe020b3e2bf85b505dafd019ce8cea4c9) use poll() inside threads to prvent block
+    - The server uses `poll()` with a 1-second timeout to check for remote connections, so that user input (0: Exit) does not get blocked by `accept()`
+    - The client uses `poll()` with a 500-millisecond timeout to detect whether the server has closed the connection, in case user input blocks termination
+    - A readerThread is added on the client side to monitor the socket status from the server
+##### Design Improvement: Single-threaded Event Handling with poll()
+- A single `poll()` call can be used to handle all I/O events, including:
+    - User input (`STDIN`)
+    - Listening socket `accept()`
+    - Connected socket `recv()`
+- By adopting this approach, the main thread, socket thread, and reader thread can be merged into a single event loop, simplifying the overall architecture
+    ```c++
+    for (int i = 0; i < pfNum; i++) {
+        if (pfs[i].revents & POLLHUP) {
+            // Peer disconnected; handle cleanup if needed
+        } else if (pfs[i].revents & POLLIN) {
+            if (pfs[i].fd == lsock) {
+                // Listening socket is ready: accept a new connection
+                // Add the connected socket to the poll list
+                addToPfds(pfs, sock, &pfNum, POLLIN | POLLHUP | POLLERR);
+            } else if (pfs[i].fd == STDIN_FILENO) {
+                // User input detected
+            } else {
+                // Connected socket is ready to receive data
+            }
+        }
+    }
+    ```
+- No blocking calls are required to wait for user input or socket activity:
+    - `poll()` itself becomes the unified synchronization point
+    - There is no need to rely on blocking `read()`, `recv()`, or separate waiting mechanisms
+- No timeout is required for `poll()`:
+    - The event loop reacts only when actual events occur
+    - There is no need to periodically wake up to check the status of other threads
+- No artificial delays are needed:
+    - There is no need to `sleep()` while waiting for socket disconnection or state changes
+    - Socket lifecycle events (connect, disconnect, error) are naturally driven by `poll()` events such as `POLLHUP` or `POLLERR`
+- Thread and state management are simplified:
+    - The dedicated readerThread can be removed
+    - Socket running flags used solely for inter-thread coordination are no longer necessary
+    - Resource lifetime is managed deterministically within a single event loop
 
 #### How to Run
 ```shell
@@ -136,11 +173,13 @@ usage: ./serialize_demo_socket SHOW_STRUCTURE(0/1) <server PORT|client HOST PORT
 
 # server
 ./serialize_demo_socket 1 server 8888
-(getNextCommandID) Waiting for command... (0:Exit)
+## Wait for client to send data...
+Server only accepts 0 for Exit
+
 
 # client
 ./serialize_demo_socket 1 client 127.0.0.1 8888
-(getNextCommandID) Waiting for command... (0:Exit,
+Client supports command from 0-9, 0:Exit,
  TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array,
  MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array,
  NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array)

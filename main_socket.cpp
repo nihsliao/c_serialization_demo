@@ -4,9 +4,8 @@
 #include "MPACK/mpack_usage.h"
 #include "NANOPB/nanopb_usage.h"
 #include "TPL/tpl_usage.h"
-#include "queue_common.h"
-#include "handling_thread.hpp"
 #include "apis.h"
+#include "handling_thread.hpp"
 
 #define THREAD_BUFFER_SIZE 7
 
@@ -25,47 +24,11 @@ static void print_usage(int argc, char** argv) {
             return;
         }
     }
-
     fprintf(stderr, "usage: %s SHOW_STRUCTURE(0/1) <server PORT|client HOST PORT>\n", argv[0]);
-}
-
-UserCommand getNextCommandID(bool isServer) {
-    int result = -1;
-    struct pollfd pfd{};
-    pfd.fd = STDIN_FILENO;
-    pfd.events = POLLIN;
-
-    int ret = poll(&pfd, 1, 500);
-    if (ret == 0) {
-        // timeout
-        return UserCommand::TIMEOUT;
-    }
-    if (ret < 0) {
-        perror("poll");
-        return UserCommand::UNINITIAL;
-    }
-
-    char buf[64];
-    int n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
-    if (n >= 32) {
-        std::cerr << "Input too long, max 32 characters." << std::endl;
-        return UserCommand::UNINITIAL;
-    }
-
-    buf[n] = '\0';
-    result = atoi(buf);
-
-    std::cout << "Input: " << result << "\n";
-
-    if (isServer && result != 0) result = -1;
-    else if (result > (int)UserCommand::NANOPB_TEN_STRUCTURES_ARRAY || result < 0) result = -1;
-
-    return (UserCommand)result;
 }
 
 int main(int argc, char** argv) {
     int ret = -1;
-    UserCommand userInput = UserCommand::UNINITIAL;
     if (argc < 4) {
         print_usage(argc, argv);
         return ret;
@@ -78,32 +41,9 @@ int main(int argc, char** argv) {
         ThreadManager manager{isServer};
 
         manager.startHandler();
-        manager.startSocket(argv);
+        manager.startRun(argv);
 
-        do {
-            if (userInput != UserCommand::TIMEOUT) {
-                cout << "(getNextCommandID) Waiting for command... (0:Exit";
-                if (!isServer) {
-                    cout << ",\n TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array";
-                    cout << ",\n MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array";
-                    cout << ",\n NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array";
-                }
-                cout << ")" << endl;
-            }
-
-            userInput = getNextCommandID(isServer);
-            if (manager.getShouldTerminate()) {
-                cout << "The socket has terminated. Exit process...";
-                break;
-            } else if (userInput == UserCommand::TIMEOUT) continue;
-            manager.currentCommandId.store(userInput);
-            cout << "(main) Current Command ID: " << (int)manager.currentCommandId.load() << endl;
-
-            manager.handleCommandUpdated();
-        } while (manager.currentCommandId.load() != UserCommand::EXIT);
-
-        // user indicated exit, stop the handler thread
-        manager.stopThreads();
+        manager.stopHandler();
 
         ret = 0;
     } else {

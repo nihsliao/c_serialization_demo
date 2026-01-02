@@ -2,15 +2,17 @@
 #ifndef HANDLING_THREAD_HPP
 #define HANDLING_THREAD_HPP
 
+#include <poll.h>
 #include <sys/socket.h>
+
 #include <atomic>
 #include <functional>
-#include <unordered_map>
 #include <iostream>
-#include <poll.h>
+#include <unordered_map>
 
-#include "sample_structure.h"
 #include "apis.h"
+#include "queue_common.h"
+#include "sample_structure.h"
 
 using namespace std;
 
@@ -27,12 +29,12 @@ void printBufferHex(const void* buffer, size_t size) {
 }
 
 class ThreadManager {
-    public:
+   public:
     atomic<UserCommand> currentCommandId{UserCommand::UNINITIAL};
 
     ThreadManager(bool server) {
         isServer = server;
-        inputQueue = BlockingConcurrentQueue<QueuElement>(20); 
+        inputQueue = BlockingConcurrentQueue<QueuElement>(20);
         outputQueue = BlockingConcurrentQueue<QueuElement>(20);
     }
 
@@ -57,57 +59,18 @@ class ThreadManager {
         if (handlerThread.joinable()) {
             handlerThread.join();
         }
-    }
-
-    void startSocket(char** argv) {
-        socketThread = std::thread([this, argv]() {
-            if (isServer)
-                runServer(argv);
-            else
-                runClient(argv);
-        });
-    }
-
-    void stopSocket() {
-        printf("(stopSocket)\n");
-        isSocketRunning = false;
-        // unblock socket thread if blocked on read/write
-        ::shutdown(sock, SHUT_RDWR);
-        // unblock writer thread if blocked on wait_dequeue_timed
-        enqueueElement(outputQueue, QueuElement{});
-
-        if (socketThread.joinable()) {
-            socketThread.join();
-        }
-    }
-
-    void stopThreads() {
-        printf("(stopThreads)\n");
-        stopSocket();
-        stopHandler();
-        handleSocketClosed();
         clearQueue(inputQueue);
         clearQueue(outputQueue);
     }
 
-    void setShouldTerminate(bool action) {
-        shouldTerminate = action;
+    void startRun(char** argv) {
+        if (isServer)
+            runServer(argv);
+        else
+            runClient(argv);
     }
 
-    bool getShouldTerminate() {
-        return shouldTerminate;
-    }
-
-    void handleCommandUpdated() {
-        if (currentCommandId == UserCommand::EXIT) setShouldTerminate(true);
-        else if (!isServer) enqueueCommand(currentCommandId);
-    }
-
-    void enqueueCommand(UserCommand command) {
-        enqueueElement(inputQueue, {command});
-    }
-
-    private:
+   private:
     int sock;
     bool isServer{true};
     int dequeue_timeout = 1;
@@ -116,62 +79,97 @@ class ThreadManager {
     BlockingConcurrentQueue<QueuElement> outputQueue;
     atomic<bool> isSocketRunning{true};
     atomic<bool> isHandlerRunning{false};
-    atomic<bool> shouldTerminate{false};
-    thread socketThread;
-    thread readerThread;
     thread handlerThread;
     thread writerThread;
+
+    void enqueueCommand(UserCommand command) {
+        enqueueElement(inputQueue, {command});
+    }
+
+    /*
+     * Add a new file descriptor to the set.
+     */
+    void addToPfds(struct pollfd pfds[], int newfd, int* pfNum, int events) {
+        pfds[*pfNum].fd = newfd;
+        pfds[*pfNum].events = events;
+        pfds[*pfNum].revents = 0;
+
+        (*pfNum)++;
+    }
+
+    /*
+     * Remove a file descriptor at a given index from the set.
+     */
+    void delFromPfds(struct pollfd pfds[], int i, int* pfNum) {
+        // Copy the one from the end over this one
+        pfds[i] = pfds[*pfNum - 1];
+
+        (*pfNum)--;
+    }
+
+    UserCommand getNextCommandID(bool isServer) {
+        int result = -1;
+        char buf[64];
+        int n = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+        if (n >= 32) {
+            std::cerr << "Input too long, max 32 characters." << std::endl;
+            return UserCommand::UNINITIAL;
+        }
+
+        buf[n] = '\0';
+        result = atoi(buf);
+        std::cout << "Input: " << result << "\n";
+
+        if (isServer && result != 0) result = -1;
+        else if (result > (int)UserCommand::NANOPB_TEN_STRUCTURES_ARRAY || result < 0) result = -1;
+
+        return (UserCommand)result;
+    }
 
     void handleSocketClosed() {
         printf("(handleSocketClosed)\n");
         if (sock) close(sock);
-        if (!isServer) setShouldTerminate(true);
     }
 
-    // Use the receiver thread to read the encoded message from socket
-    void socketReceiver() {
+    int socketReceiver() {
+        int ret = -1;
         QueuElement result = {};
         memset(result.buffer, 0, MAX_BUFFER);
 
-        while (isSocketRunning) {
-            printf("(socketReceiver) Before reading socket ...\n");
+        printf("(socketReceiver) Start reading socket ...\n");
 
-            uint64_t data = 0;
-            if (recv_all(sock, &data, sizeof(data)) != 0) {
-                perror("recv commandId");
-                isSocketRunning = false;
-                break;
-            }
-            result.commandId = (UserCommand)be64toh(data);
-
-            data = 0;
-            if (recv_all(sock, &data, sizeof(data)) != 0) {
-                perror("recv len");
-                isSocketRunning = false;
-                break;
-            }
-
-            result.size = (size_t)be64toh(data);
-
-            if (result.size == 0) {
-                perror("invalid size 0");
-                isSocketRunning = false;
-                break;
-            } else if (result.size > MAX_BUFFER) {
-                perror("size too large");
-                isSocketRunning = false;
-                break;
-            }
-
-            if (recv_all(sock, result.buffer, result.size) != 0) {
-                perror("recv payload");
-                isSocketRunning = false;
-                break;
-            }
-
-            printf("(socketReceiver) After reading socket ...\n");
-            enqueueElement(inputQueue, result);
+        uint64_t data = 0;
+        if (recv_all(sock, &data, sizeof(data)) != 0) {
+            perror("recv commandId");
+            return ret;
         }
+        result.commandId = (UserCommand)be64toh(data);
+
+        data = 0;
+        if (recv_all(sock, &data, sizeof(data)) != 0) {
+            perror("recv len");
+            return ret;
+        }
+
+        result.size = (size_t)be64toh(data);
+
+        if (result.size == 0) {
+            perror("invalid size 0");
+            return ret;
+        } else if (result.size > MAX_BUFFER) {
+            perror("size too large");
+            return ret;
+        }
+
+        if (recv_all(sock, result.buffer, result.size) != 0) {
+            perror("recv payload");
+            return ret;
+        }
+
+        printf("(socketReceiver) Done reading socket ...\n");
+        enqueueElement(inputQueue, result);
+        ret = 0;
+        return ret;
     }
 
     // Use the writer thread to write the encoded message to socket
@@ -212,10 +210,10 @@ class ThreadManager {
     }
 
     /*
-    * The main server loop to manage socket connection and respond to transfer the incoming encoded messages to handler thread through inputQueue
-    *  - portstr: port to listen
-    * 
-    */
+     * The main server loop to manage socket connection and respond to transfer the incoming encoded messages to handler thread through inputQueue
+     *  - portstr: port to listen
+     *
+     */
     void runServer(char** argv) {
         const char* portstr = argv[3];
         if (!portstr) return;
@@ -223,7 +221,8 @@ class ThreadManager {
         int lsock;
         struct sockaddr_in addr;
         int opt = 1;
-        struct pollfd pfd = {};
+        struct pollfd pfs[3] = {};
+        int pfNum = 0;
         int pollCount = 0;
 
         printf("(runServer) start...\n");
@@ -254,12 +253,12 @@ class ThreadManager {
         }
         printf("Server listening on %d ...\n", port);
 
-        pfd.fd = lsock;
-        pfd.events = POLLIN;
+        addToPfds(pfs, lsock, &pfNum, POLLIN);
+        addToPfds(pfs, STDIN_FILENO, &pfNum, POLLIN);
 
         while (currentCommandId.load() != UserCommand::EXIT) {
             // accept a client connection
-            pollCount = poll(&pfd, 1, 1000);
+            pollCount = poll(pfs, pfNum, -1);
             if (pollCount == -1) {
                 perror("poll fail");
                 goto cleanup_lsock;
@@ -268,35 +267,52 @@ class ThreadManager {
                 continue;
             }
 
-            printf("Got client connection\n");
-            if (pfd.revents & (POLLIN | POLLHUP)) {
-                if (pfd.fd == lsock) {
-                    sock = accept(lsock, NULL, NULL);
-                    if (shouldTerminate) {
-                        printf("Socket accepted but terminated by user input\n");
-                        goto cleanup_sock;
-                    }
-                    if (sock < 0) {
-                        perror("accept fail");
-                        goto cleanup_sock;
-                    }
-
-                    isSocketRunning = true;
-                    readerThread = std::thread([this]() {
-                        socketReceiver();
-                    });
-
-                    while (isSocketRunning && currentCommandId.load() != UserCommand::EXIT) {
-                        this_thread::sleep_for(chrono::seconds(1));
-                    }
-                    if (readerThread.joinable()) readerThread.join();
+            printf("Got poll() return %d\n", pollCount);
+            for (int i = 0; i < pfNum; i++) {
+                if (pfs[i].revents & POLLHUP) {
+                    printf("  -> hang up detected\n");
                     printf("(runServer) Socket has closed. Retry later...\n");
+                    goto cleanup_lsock;
+                } else if (pfs[i].revents & POLLIN) {
+                    printf("  pfs[%d]: fd=%d, revents=0x%x\n", i, pfs[i].fd, pfs[i].revents);
+
+                    if (pfs[i].fd == lsock) {
+                        printf("  -> listening socket\n");
+                        sock = accept(lsock, NULL, NULL);
+                        if (sock < 0) {
+                            perror("accept fail");
+                            handleSocketClosed();
+                            break;
+                        }
+                        addToPfds(pfs, sock, &pfNum, POLLIN | POLLHUP | POLLERR);
+                    } else if (pfs[i].fd == STDIN_FILENO) {
+                        printf("  -> user input\n");
+                        // user input available
+                        currentCommandId.store(getNextCommandID(true));
+                        if (currentCommandId.load() == UserCommand::EXIT) {
+                            // user indicated exit
+                            printf("User indicated exit. Closing socket...\n");
+                            goto cleanup_lsock;
+                        } else
+                            cout << "Server only accepts 0 for Exit" << endl;
+                    } else {
+                        printf("  -> client socket\n");
+                        if (socketReceiver() != 0) {
+                            printf("Client socket error or closed\n");
+                            // remove client socket from pfds
+                            delFromPfds(pfs, i, &pfNum);
+                            handleSocketClosed();
+                            break;
+                        }
+                    }
                 }
             }
-        cleanup_sock:
-            handleSocketClosed();
         }
     cleanup_lsock:
+        stopHandler();
+        handleSocketClosed();
+        clearQueue(inputQueue);
+        printf("(runServer) Server exiting...\n");
         if (lsock) close(lsock);
     }
 
@@ -324,7 +340,7 @@ class ThreadManager {
             } else {
                 decode_array(library, element.buffer, element.size, outInfos, &outInfoSize);
             }
-            
+
             for (int i = 0; i < outInfoSize; i++) {
                 print_wifi_softap_info(outInfos + i);
             }
@@ -334,17 +350,20 @@ class ThreadManager {
     }
 
     /*
-    * The main client loop to manage socket connection and respond to transfer the user command to handler thread through inputQueue
-    *  - host: IP or hostname (we use inet_pton for simplicity; pass IP string)
-    *  - portstr: decimal port string
-    * 
-    */
+     * The main client loop to manage socket connection and respond to transfer the user command to handler thread through inputQueue
+     *  - host: IP or hostname (we use inet_pton for simplicity; pass IP string)
+     *  - portstr: decimal port string
+     *
+     */
     void runClient(char** argv) {
         const char* host = argv[3];
         const char* portstr = argv[4];
         if (!portstr) return;
         int port = atoi(portstr);
         struct sockaddr_in addr;
+        struct pollfd pfs[2] = {};
+        int pfNum = 0;
+        int pollCount = 0;
 
         printf("Client start...\n");
         sock = socket(AF_INET, SOCK_STREAM, 0);
@@ -367,62 +386,86 @@ class ThreadManager {
             goto socket_close;
         }
 
+        addToPfds(pfs, sock, &pfNum, POLLIN | POLLHUP | POLLERR);
+        addToPfds(pfs, STDIN_FILENO, &pfNum, POLLIN);
+
         isSocketRunning = true;
-        writerThread =  std::thread([this]() {
+        writerThread = std::thread([this]() {
             socketWriter();
         });
 
-        readerThread = std::thread([this]() {
-            int pollCount = 0;
-            struct pollfd pfd{};
-            pfd.fd = sock;
-            pfd.events = POLLIN | POLLHUP | POLLERR;
+        while (currentCommandId.load() != UserCommand::EXIT) {
+            // wait for socket or user input
+            pollCount = poll(pfs, pfNum, -1);
+            if (pollCount == -1) {
+                perror("poll fail");
+                goto socket_close;
+            } else if (pollCount == 0) {
+                // timeout, continue to check for exit condition
+                continue;
+            }
 
-            while (isSocketRunning) {
-                pollCount = poll(&pfd, 1, -1);
-                if (pollCount <= 0) {
-                    perror("poll fail");
-                    isSocketRunning = false;
-                    break;
+            printf("Got poll() return %d\n", pollCount);
+            for (int i = 0; i < pfNum; i++) {
+                if (pfs[i].revents & (POLLHUP | POLLERR)) {
+                    printf("  pfs[%d]: fd=%d, revents=0x%x\n", i, pfs[i].fd, pfs[i].revents);
+                    printf("  -> hang up or error detected\n");
+                    printf("(runClient) Socket has closed. Ending...\n");
+                    goto socket_close;
                 }
 
-                if (pfd.revents & (POLLHUP | POLLERR)) {
-                    printf("Socket hang up or error\n");
-                    isSocketRunning = false;
-                    break;
-                } else if (pfd.revents & POLLIN) {
-                    char tmp[1];
-                    int n = recv(sock, tmp, sizeof(tmp), MSG_DONTWAIT);
+                if (pfs[i].revents & POLLIN) {
+                    printf("  pfs[%d]: fd=%d, revents=0x%x\n", i, pfs[i].fd, pfs[i].revents);
+                    if (pfs[i].fd == sock) {
+                        printf("  -> socket\n");
+                        char tmp[1];
+                        int n = recv(sock, tmp, sizeof(tmp), MSG_DONTWAIT);
 
-                    if (n == 0) {
-                        // server closed gracefully
-                        printf("Server closed connection\n");
-                        isSocketRunning = false;
-                        break;
-                    }
-
-                    if (n < 0) {
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-                            // nothing to read, false alarm
-                            continue;
+                        if (n == 0) {
+                            // server closed gracefully
+                            printf("Server closed connection\n");
+                            goto socket_close;
                         }
-                        perror("recv error");
-                        isSocketRunning = false;
-                        break;
+
+                        if (n < 0) {
+                            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                                // nothing to read, false alarm
+                                continue;
+                            }
+                            perror("recv error");
+                            goto socket_close;
+                        }
+                        // n > 0 : server sent data
+                        // since client "doesn't read", discard it
+                    } else if (pfs[i].fd == STDIN_FILENO) {
+                        printf("  -> user input\n");
+                        // user input available
+                        currentCommandId.store(getNextCommandID(false));
+                        UserCommand commandId = currentCommandId.load();
+                        if (commandId >= UserCommand::TPL_SINGLE_STRUCTURE && commandId <= UserCommand::NANOPB_TEN_STRUCTURES_ARRAY) {
+                            printf("Enqueue commandId=%d to handler\n", (int)commandId);
+                            enqueueCommand(commandId);
+                        } else if (currentCommandId.load() == UserCommand::EXIT) {
+                            // user indicated exit
+                            printf("User indicated exit. Closing socket...\n");
+                            goto socket_close;
+                        } else {
+                            cout << "Client supports command from 0-9, 0:Exit";
+                            cout << ",\n TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array";
+                            cout << ",\n MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array";
+                            cout << ",\n NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array)" << endl;
+                        }
                     }
-                    // n > 0 : server sent data
-                    // since client "doesn't read", discard it
                 }
             }
-        });
-
-        while (isSocketRunning) {
-            std::this_thread::sleep_for(std::chrono::seconds(1));
         }
-        if (writerThread.joinable()) writerThread.join();
-        if (readerThread.joinable()) readerThread.join();
-        printf("(runClient) Socket has closed. Ending...\n");
+
     socket_close:
+        printf("(runClient) Socket has closed. Ending...\n");
+        isSocketRunning = false;
+        // unblock handler thread if blocked on wait_dequeue_timed
+        enqueueElement(outputQueue, QueuElement{});
+        if (writerThread.joinable()) writerThread.join();
         handleSocketClosed();
     }
 
@@ -452,7 +495,7 @@ class ThreadManager {
                 encode(library, &infos[0], result.buffer, &result.size);
             } else {
                 // decode_array(library, input.buffer, input.size, outInfos, &outInfoSize);
-                encode_array(library, infos, 10-(4*mode), result.buffer, &result.size);
+                encode_array(library, infos, 10 - (4 * mode), result.buffer, &result.size);
             }
             enqueueElement(outputQueue, result);
         }
@@ -468,7 +511,8 @@ class ThreadManager {
             return "mpack";
         } else if (command <= UserCommand::NANOPB_TEN_STRUCTURES_ARRAY) {
             return "nanopb";
-        } else return nullptr;
+        } else
+            return nullptr;
     }
 };
 
