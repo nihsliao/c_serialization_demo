@@ -23,10 +23,9 @@ enum class UserCommand {
 
 struct QueuElement {
     UserCommand commandId = UserCommand::UNINITIAL;
-    uint8_t buffer[MAX_BUFFER] = {0};
-    size_t size = 0;
+    std::vector<uint8_t> data;
     void toString() {
-        printf("commandId=%d, size=%ld\n", (int)commandId, size);
+        printf("commandId=%d, size=%ld\n", (int)commandId, data.size());
     }
 };
 

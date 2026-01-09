@@ -2,8 +2,11 @@
 #ifndef HANDLING_THREAD_HPP
 #define HANDLING_THREAD_HPP
 
+#include <errno.h>
 #include <poll.h>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <functional>
@@ -18,6 +21,9 @@ using namespace std;
 
 typedef std::function<void()> handleCommandFunction;
 std::unordered_map<uint16_t, handleCommandFunction> handleCommandFunctionMap;
+
+uint8_t buffer[MAX_BUFFER] = {0};
+size_t size = 0;
 
 // Utility function to convert integer to hex string
 void printBufferHex(const void* buffer, size_t size) {
@@ -54,7 +60,7 @@ class ThreadManager {
         printf("(stopHandler)\n");
         isHandlerRunning = false;
         // unblock handler thread if blocked on wait_dequeue_timed
-        enqueueElement(outputQueue, QueuElement{});
+        enqueueElement(inputQueue, QueuElement{});
 
         if (handlerThread.joinable()) {
             handlerThread.join();
@@ -71,19 +77,27 @@ class ThreadManager {
     }
 
    private:
+    int writeEventfd{-1};
     int sock;
     bool isServer{true};
     int dequeue_timeout = 1;
     std::chrono::seconds DEQUEUE_TIMEOUT = std::chrono::seconds(dequeue_timeout);
     BlockingConcurrentQueue<QueuElement> inputQueue;
     BlockingConcurrentQueue<QueuElement> outputQueue;
-    atomic<bool> isSocketRunning{true};
     atomic<bool> isHandlerRunning{false};
     thread handlerThread;
-    thread writerThread;
 
     void enqueueCommand(UserCommand command) {
         enqueueElement(inputQueue, {command});
+    }
+
+    void notifyPoll(int fd) {
+        if (fd == -1) return;
+        uint64_t u = 1;
+        ssize_t s = write(fd, &u, sizeof(uint64_t));
+        if (s != sizeof(uint64_t)) {
+            perror("write to eventfd");
+        }
     }
 
     /*
@@ -134,10 +148,8 @@ class ThreadManager {
     int socketReceiver() {
         int ret = -1;
         QueuElement result = {};
-        memset(result.buffer, 0, MAX_BUFFER);
 
         printf("(socketReceiver) Start reading socket ...\n");
-
         uint64_t data = 0;
         if (recv_all(sock, &data, sizeof(data)) != 0) {
             perror("recv commandId");
@@ -151,17 +163,17 @@ class ThreadManager {
             return ret;
         }
 
-        result.size = (size_t)be64toh(data);
-
-        if (result.size == 0) {
+        size_t size = (size_t)be64toh(data);
+        if (size == 0) {
             perror("invalid size 0");
             return ret;
-        } else if (result.size > MAX_BUFFER) {
+        } else if (size > MAX_BUFFER) {
             perror("size too large");
             return ret;
         }
+        result.data.resize(size);
 
-        if (recv_all(sock, result.buffer, result.size) != 0) {
+        if (recv_all(sock, result.data.data(), size) != 0) {
             perror("recv payload");
             return ret;
         }
@@ -172,41 +184,38 @@ class ThreadManager {
         return ret;
     }
 
-    // Use the writer thread to write the encoded message to socket
-    void socketWriter() {
-        printf("(socketWriter) start\n");
+    int socketWriter() {
+        int ret = -1;
+        printf("(socketWriter) start writing\n");
         QueuElement result;
         uint64_t data = 0;
-        while (isSocketRunning) {
-            if (!outputQueue.wait_dequeue_timed(result, DEQUEUE_TIMEOUT)) {
-                continue;
-            }
-
-            UserCommand commandId = result.commandId;
-            printf("(socketWriter) commandId=%d\n", (int)commandId);
-
-            if (commandId < UserCommand::TPL_SINGLE_STRUCTURE || commandId > UserCommand::NANOPB_TEN_STRUCTURES_ARRAY) continue;
-            data = htobe64((uint64_t)commandId);
-            if (send_all(sock, &data, sizeof(data)) != 0) {
-                perror("send len");
-                isSocketRunning = false;
-                break;
-            }
-
-            data = htobe64((uint64_t)result.size);
-            if (send_all(sock, &data, sizeof(data)) != 0) {
-                perror("send len");
-                isSocketRunning = false;
-                break;
-            }
-
-            if (send_all(sock, result.buffer, result.size) != 0) {
-                perror("send payload");
-                isSocketRunning = false;
-                break;
-            }
-            printf("(socketWriter) end\n");
+        if (!outputQueue.try_dequeue(result)) {
+            return ret;
         }
+
+        UserCommand commandId = result.commandId;
+        printf("(socketWriter) commandId=%d\n", (int)commandId);
+        if (commandId < UserCommand::TPL_SINGLE_STRUCTURE || commandId > UserCommand::NANOPB_TEN_STRUCTURES_ARRAY) return ret;
+        data = htobe64((uint64_t)commandId);
+        if (send_all(sock, &data, sizeof(data)) != 0) {
+            perror("send len");
+            return ret;
+        }
+
+        size_t size = result.data.size();
+        data = htobe64((uint64_t)size);
+        if (send_all(sock, &data, sizeof(data)) != 0) {
+            perror("send len");
+            return ret;
+        }
+
+        if (send_all(sock, result.data.data(), size) != 0) {
+            perror("send payload");
+            return ret;
+        }
+        printf("(socketWriter) done writing\n");
+        ret = 0;
+        return ret;
     }
 
     /*
@@ -272,7 +281,7 @@ class ThreadManager {
                 if (pfs[i].revents & POLLHUP) {
                     printf("  -> hang up detected\n");
                     printf("(runServer) Socket has closed. Retry later...\n");
-                    goto cleanup_lsock;
+                    break;
                 } else if (pfs[i].revents & POLLIN) {
                     printf("  pfs[%d]: fd=%d, revents=0x%x\n", i, pfs[i].fd, pfs[i].revents);
 
@@ -292,7 +301,7 @@ class ThreadManager {
                         if (currentCommandId.load() == UserCommand::EXIT) {
                             // user indicated exit
                             printf("User indicated exit. Closing socket...\n");
-                            goto cleanup_lsock;
+                            break;
                         } else
                             cout << "Server only accepts 0 for Exit" << endl;
                     } else {
@@ -332,13 +341,16 @@ class ThreadManager {
             UserCommand commandId = element.commandId;
             const char* library = getLibraryFromCommand(commandId);
             if (library == nullptr) continue;
+            memset(buffer, 0, MAX_BUFFER);
+            size_t size = min(element.data.size(), (size_t)MAX_BUFFER);
+            copy(element.data.begin(), element.data.begin() + size, buffer);
 
             int mode = static_cast<int>(commandId) % 3;
             if (mode == 1) {
-                decode(library, element.buffer, element.size, outInfos);
+                decode(library, buffer, size, outInfos);
                 outInfoSize = 1;
             } else {
-                decode_array(library, element.buffer, element.size, outInfos, &outInfoSize);
+                decode_array(library, buffer, size, outInfos, &outInfoSize);
             }
 
             for (int i = 0; i < outInfoSize; i++) {
@@ -361,7 +373,7 @@ class ThreadManager {
         if (!portstr) return;
         int port = atoi(portstr);
         struct sockaddr_in addr;
-        struct pollfd pfs[2] = {};
+        struct pollfd pfs[3] = {};
         int pfNum = 0;
         int pollCount = 0;
 
@@ -386,13 +398,14 @@ class ThreadManager {
             goto socket_close;
         }
 
+        writeEventfd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+        if (writeEventfd < 0) {
+            perror("eventfd");
+            goto socket_close;
+        }
         addToPfds(pfs, sock, &pfNum, POLLIN | POLLHUP | POLLERR);
         addToPfds(pfs, STDIN_FILENO, &pfNum, POLLIN);
-
-        isSocketRunning = true;
-        writerThread = std::thread([this]() {
-            socketWriter();
-        });
+        addToPfds(pfs, writeEventfd, &pfNum, POLLIN);
 
         while (currentCommandId.load() != UserCommand::EXIT) {
             // wait for socket or user input
@@ -448,12 +461,26 @@ class ThreadManager {
                         } else if (currentCommandId.load() == UserCommand::EXIT) {
                             // user indicated exit
                             printf("User indicated exit. Closing socket...\n");
-                            goto socket_close;
+                            break;
                         } else {
                             cout << "Client supports command from 0-9, 0:Exit";
                             cout << ",\n TPL   : 1:Single Structure, 2:Two Structures Array, 3:Ten Structures Array";
                             cout << ",\n MPACK : 4:Single Structure, 5:Two Structures Array, 6:Ten Structures Array";
                             cout << ",\n NANOPB: 7:Single Structure, 8:Two Structures Array, 9:Ten Structures Array)" << endl;
+                        }
+                    } else if (pfs[i].fd == writeEventfd) {
+                        printf("  -> eventfd\n");
+                        uint64_t u;
+                        ssize_t s = read(writeEventfd, &u, sizeof(uint64_t));  // clear the eventfd
+                        if (s != sizeof(uint64_t)) {
+                            perror("read from eventfd");
+                        }
+
+                        if (socketWriter() != 0) {
+                            printf("Client socket error or closed\n");
+                            // remove client socket from pfds
+                            delFromPfds(pfs, i, &pfNum);
+                            goto socket_close;
                         }
                     }
                 }
@@ -462,10 +489,6 @@ class ThreadManager {
 
     socket_close:
         printf("(runClient) Socket has closed. Ending...\n");
-        isSocketRunning = false;
-        // unblock handler thread if blocked on wait_dequeue_timed
-        enqueueElement(outputQueue, QueuElement{});
-        if (writerThread.joinable()) writerThread.join();
         handleSocketClosed();
     }
 
@@ -487,17 +510,19 @@ class ThreadManager {
             if (library == nullptr) continue;
 
             result = QueuElement{commandId};
+            memset(buffer, 0, MAX_BUFFER);
+            size_t size = 0;
 
             int mode = static_cast<int>(commandId) % 3;
             printf("(clientHandler) commandId=%d, mode=%d\n", (int)commandId, mode);
             if (mode == 1) {
-                // encode(library, input.buffer, input.size, outInfos);
-                encode(library, &infos[0], result.buffer, &result.size);
+                encode(library, &infos[0], buffer, &size);
             } else {
-                // decode_array(library, input.buffer, input.size, outInfos, &outInfoSize);
-                encode_array(library, infos, 10 - (4 * mode), result.buffer, &result.size);
+                encode_array(library, infos, 10 - (4 * mode), buffer, &size);
             }
+            result.data.assign(buffer, buffer + size);
             enqueueElement(outputQueue, result);
+            notifyPoll(writeEventfd);
         }
         printf(("handler end\n"));
     }

@@ -79,63 +79,24 @@ graph TD;
 ```
 
 ### Socket Client-Server Demo
-- Similar to the [Single run demo](#single-run-demo), but uses `threads` and a `queue library` to handle the socket implementation
+- Similar to the [Single run demo](#single-run-demo), but uses `threads` and a `queue library` to implement socket handling
 - The queue library is [moodycamel::ConcurrentQueue v1.0.4](https://github.com/cameron314/concurrentqueue)
     - `InputQueue`: Passes data to the handler thread for encoding or decoding
     - `OutputQueue`: Passes data for the socket writer thread
-- Main Thread: Starts both the handler and socket threads, then awaits a user input command
+- Main Thread: Starts the handler, prepares the server or client socket, and then uses `poll()` to wait for connections
 - Management of the handler thread: **ThreadManager::startHandler()**, **ThreadManager::stopHandler()**
-- Management of the socket thread: **ThreadManager::startSocket(char\*\* argv)**, **ThreadManager::stopSocket()**
-    - Responds by starting a *reader* or *writer* thread based on whether the application is a server or a client
-- Stopping all threads: **ThreadManager::stopThreads()**
+- Starts **ThreadManager::runServer(...)** or **ThreadManager::runClient(...)** depending on whether the application runs as a server or a client
 
-#### Server
-- If the user does not input `0` to exit, the server will wait for a client to connect and attempt to read and decode data
-- It will retry to accept the next connection after a previous client has disconnected
-- Queue:
-    - **InputQueue**: Passes incoming data from the socket to the handler thread for decoding
-- Threads:
-    - Main Thread: Only accepts `UserCommand::Exit (0)`
-    - Handler Thread:
-        - Runnable: **ThreadManager::serverHandler()**
-        - Awaits dequeueing from the **inputQueue** with a timeout(1s), and stays alive if **isHandlerRunning** is `true`
-        - Responds by decoding using `static int decode(const char* library, void* buf, size_t sz, wifi_softap_info_t* out_info)` and showing the result
-    - Socket Thread:
-        - Runnable: **ThreadManager::runServer(char\*\* argv)**
-        - Awaits a client connection and starts the reader thread; the thread keeps alive if the user does not input `UserCommand::EXIT`
-    - Reader Thread:
-        - Runnable: **ThreadManager::socketReceiver()**
-        - Receives the **commandId**, **buffer size** of the data, and the **data** in order
-
-#### Client
-- Encodes a sample structure based on the user input command and sends it to the server
-- Queue:
-    - **InputQueue**: Passes the user input command to the handler thread for encoding
-    - **outputQueue**: Passes encoded data from the handler thread to the writer thread for sending
-- Threads:
-    - Main Thread: Accepts commands from `UserCommand::Exit (0)` to `UserCommand::NANOPB_TEN_STRUCTURES_ARRAY (9)`
-    - Handler Thread:
-        - Runnable: **ThreadManager::clientHandler()**
-        - Awaits dequeueing from the **inputQueue** with a timeout(1s), and stays alive if **isHandlerRunning** is `true`
-        - Responds by encoding using`static int encode(const char* library, wifi_softap_info_t* info, void* out_buffer, size_t* out_size)`
-    - Socket Thread:
-        - Runnable: **ThreadManager::runClient(char\*\* argv)**
-        - Connects to the server and starts the writer thread; the thread keeps alive if the socket is still working or the user does not input `UserCommand::EXIT`
-    - Writer Thread:
-        - Runnable: **ThreadManager::socketWriter()**
-        - Awaits dequeueing from the **inputQueue** with a timeout(1s), then sends the **commandId**, **buffer size** of the data, and the **data** in order
-
-#### poll() timeout
-- Commit [966c49d](https://github.com/nihsliao/c_serialization_demo/commit/966c49dfe67e09e1c8b99ebe1f1fba6b0bb74bf3) and [44ebfba](https://github.com/nihsliao/c_serialization_demo/commit/44ebfbafe020b3e2bf85b505dafd019ce8cea4c9) use poll() inside threads to prvent block
-    - The server uses `poll()` with a 1-second timeout to check for remote connections, so that user input (0: Exit) does not get blocked by `accept()`
-    - The client uses `poll()` with a 500-millisecond timeout to detect whether the server has closed the connection, in case user input blocks termination
-    - A readerThread is added on the client side to monitor the socket status from the server
-##### Design Improvement: Single-threaded Event Handling with poll()
+#### Single-threaded Event Handling with poll() for I/O operations
 - A single `poll()` call can be used to handle all I/O events, including:
     - User input (`STDIN`)
-    - Listening socket `accept()`
+    - Listening socket `accept()` (server)
     - Connected socket `recv()`
-- By adopting this approach, the main thread, socket thread, and reader thread can be merged into a single event loop, simplifying the overall architecture
+    - Connected socket `send()` (client)
+        - Uses `eventfd` to manually trigger `poll()` via **ThreadManager::notifyPoll(...)** for socket write requests from the handler thread
+        - The `eventfd` is used only for event notification via `poll()`, not for data transmission
+        - The data itself is stored in **concurrentqueue** for transfer
+- By adopting this approach, the main thread, socket thread, reader thread, and writer thread (client only) can be merged into a single event loop, simplifying the overall architecture
     ```c++
     for (int i = 0; i < pfNum; i++) {
         if (pfs[i].revents & POLLHUP) {
@@ -153,6 +114,18 @@ graph TD;
         }
     }
     ```
+    ```c++
+        notifyPoll(writeEventfd);
+
+        ...
+
+        if (pfs[i].fd == writeEventfd) {
+            uint64_t u;
+            ssize_t s = read(writeEventfd, &u, sizeof(uint64_t));  // clear the eventfd
+            // Data is ready to be sent via the socket
+        }
+    ```
+
 - No blocking calls are required to wait for user input or socket activity:
     - `poll()` itself becomes the unified synchronization point
     - There is no need to rely on blocking `read()`, `recv()`, or separate waiting mechanisms
@@ -166,6 +139,46 @@ graph TD;
     - The dedicated readerThread can be removed
     - Socket running flags used solely for inter-thread coordination are no longer necessary
     - Resource lifetime is managed deterministically within a single event loop
+- Before calling `poll()`, the `pollfd` array should be set up using **ThreadManager::addToPfds(...)** and **ThreadManager::delFromPfds(...)**
+
+#### Server
+- If the user does not input `0` to exit, the server waits for a client to connect and attempts to read and decode incoming data
+- After a client disconnects, the server retries accepting the next connection
+- Queue:
+    - **InputQueue**: Passes incoming data from the socket to the handler thread for decoding
+- Handler Thread:
+    - Runnable: **ThreadManager::serverHandler()**
+    - Waits to dequeue from the **inputQueue** with a timeout (1s), and remains alive while **isHandlerRunning** is `true`
+    - Decodes data using `static int decode(const char* library, void* buf, size_t sz, wifi_softap_info_t* out_info)` and prints the result
+- **ThreadManager::runServer(char\*\* argv)**
+    - User input (STDIN):
+        - Accepts only `UserCommand::Exit (0)`
+    - Listening socket `accept()`:
+        - Adds the connected socket to the poll list
+    - Connected socket `recv()`:
+        - Calls **ThreadManager::socketReceiver()**
+        - Receives the **commandId**, **buffer size**, and **data** in order
+
+
+
+#### Client
+- Encodes a sample structure based on the user input command and sends it to the server
+- Queue:
+    - **InputQueue**: Passes user input commands to the handler thread for encoding
+    - **outputQueue**: Passes encoded data from the handler thread to the socket writer
+- Handler Thread:
+    - Runnable: **ThreadManager::clientHandler()**
+    - Awaits dequeueing from the **inputQueue** with a timeout (1s), and remains alive while **isHandlerRunning** is `true`
+    - Encodes data using `static int encode(const char* library, wifi_softap_info_t* info, void* out_buffer, size_t* out_size)`
+- **ThreadManager::runClient(char\*\* argv)**
+    - User input (STDIN):
+        - Accepts commands from `UserCommand::Exit (0)` to `UserCommand::NANOPB_TEN_STRUCTURES_ARRAY (9)`
+    - Connected socket `recv()`:
+        - Used only to detect whether the server has closed gracefully; it does not read any data
+    - Connected socket `send()`:
+        - Triggered by the handler thread via **ThreadManager::notifyPoll(...)**
+        - Calls **ThreadManager::socketWriter()**
+        - Attempts to dequeue from **OutputQueue**, then sends the **commandId**, **buffer size**, and **data** in order
 
 #### How to Run
 ```shell
@@ -190,132 +203,113 @@ Client supports command from 0-9, 0:Exit,
 ```mermaid
 flowchart TB
 classDef thread fill:#CFD,color:#777,font-weight:bold
+classDef condition fill:#98F,color:#FFF,font-weight:bold
 classDef server stroke-width:4px,stroke:#ACF
 classDef client stroke-width:4px,stroke:#FDA
+classDef crossThread fill:#EAA,color:#444,font-weight:bold
+
 
 startHandler["startHandler()"]
+stopHandler["stopHandler()"]:::crossThread
 serverHandler["serverHandler()"]:::thread
 serverHandler:::server
 clientHandler["clientHandler()"]:::thread
 clientHandler:::client
-startSocket["startSocket(char\*\* argv)"]
-runServer["runServer(char\*\* argv)"]:::thread
+
+startRun["startRun(char\*\* argv)"]
+runServer["runServer(char\*\* argv)"]
 runServer:::server
-runClient["runClient(char\*\* argv)"]:::thread
+runClient["runClient(char\*\* argv)"]
 runClient:::client
-userInput["getNextCommandID()"]
-inputUpdate["handleCommandUpdated()"]
-isExit{"UserCommand::Exit?"}
-enqueueCommand["enqueue command to inputQueue"]
-enqueueCommand:::server
-startReaderThread["readerThread = socketReceiver()"]:::thread
-startReaderThread:::server
-serverStop{
-Socket stop
-OR
-user stop}
-readerJoin["readerThread.join()"]:::server
-startWriterThread["writerThread = socketReceiver()"]:::thread
-startWriterThread:::client
-clientStop{Socket stop}
-writerJoin["writerThread.join()"]:::client
+
+serverExitCheck{"UserCommand::Exit?"}:::condition
+clientExitCheck{"UserCommand::Exit?"}:::condition
+serverPoll["poll()"]
+clientPoll["poll()"]
+serverUserInput["getNextCommandID()"]
+clientUserInput["getNextCommandID()"]
+
+serverHandlerExitCheck{"isHandlerRunning?"}:::condition
+clientHandlerExitCheck{"isHandlerRunning?"}:::condition
+
 
 %% START the flowChart
-subgraph mainP[Main thread]
+subgraph mainP[Main Process]
     main["main()"]-->startHandler
-    subgraph handler["startHandler()"]
-        startHandler--Client-->clientHandler
-        startHandler--Server-->serverHandler
+    startHandler-->startRun
+    startRun--Server-->runServer
+    startRun--Client-->runClient
+
+    %% runServer Poll LOOP
+    runServer-->serverExitCheck{"UserCommand::Exit?"}:::condition
+    subgraph ServerPollLoop[ ]
+        serverExitCheck-->serverPoll
+        serverPoll--STDIN_FILENO-->serverUserInput
+        serverUserInput-->serverSetExit:::condition
+        serverSetExit-->serverNextLoop["NEXT LOOP CHECK"]
+
+        serverPoll--lsock-->accept["accept(lsock, NULL, NULL)"]
+        accept-->addSocketPf["addToPfds(, sock, , POLLIN | POLLHUP | POLLERR)"]
+        addSocketPf-->serverNextLoop
+
+        serverPoll--else-->serverRecv["socketReceiver()"]
+        serverRecv-->serverNextLoop
     end
+    serverNextLoop-->stopHandler
 
-    startHandler-->startSocket
-    startSocket-->userInput
+    %% runClient Poll LOOP
+    runClient-->clientExitCheck
+    subgraph ClientPollLoop[ ]
+        clientExitCheck-->clientPoll
+        clientPoll--STDIN_FILENO-->clientUserInput
+        clientUserInput-->clientSetExit:::condition
+        clientSetExit-->clientNextLoop["NEXT LOOP CHECK"]
 
-    subgraph whileInput[ ]
-        userInput--Check legal-->inputUpdate
-        inputUpdate-->isExit
-        inputUpdate--Server-->enqueueCommand
-        enqueueCommand-->isExit
-        isExit--No -->userInput
+        clientPoll--sock POLLIN OR POLLHUP-->clientDisconnected["Closed on server disconnected"]:::condition
+        clientDisconnected-->clientNextLoop
+
+        clientPoll--writeEventfd-->clientSend["socketWriter()"]:::condition
+        clientSend-->clientNextLoop
     end
+    clientNextLoop-->stopHandler
 
-    isExit--Yes-->stopSocket["stopSocket()"]
-
-    subgraph stopP["stopThreads()"]
-        stopSocket-->stopHandler["stopHandler()"]
+    %% main STOP
+    subgraph stopP[ ]
         stopHandler-->socketClose["close socket"]
+        socketClose-->clearQueue
     end
-    serverHandler--join-->stopHandler
-    clientHandler--join-->stopHandler
-    socketClose-->return["return"]
 end
 
-startSocket--Server-->runServer
-startSocket--Client-->runClient
+subgraph handlerThread["startHandler()"]
+    startHandler--Client-->clientHandler
+    startHandler--Server-->serverHandler
 
-subgraph sreverSocketThread[Server Socket Thread]
-    runServer-->accept["accept(lsock, NULL, NULL)"]
-    accept-->startReaderThread
-    startReaderThread-->serverStop
-    serverStop--no -->sleep["Sleep 1s"]
-    sleep-->serverStop
-    serverStop--yes-->readerJoin
-    startReaderThread--join-->readerJoin
-    readerJoin-->s_sclose["close socket"]
+    subgraph serverHandlerThread["startHandler()"]
+        serverHandler-->serverHandlerExitCheck
+        serverHandlerExitCheck-->waitSeverInputQ["inputQueue.wait_dequeue_timed()"]
+        waitSeverInputQ--1s timeout-->serverHandlerNextLoop["NEXT LOOP CHECK"]
+
+        waitSeverInputQ-->decode["decode data"]
+        decode-->printResult["print_wifi_softap_info()"]
+        printResult-->serverHandlerNextLoop
+    end
+
+
+    subgraph clientHandlerThread["startHandler()"]
+        clientHandler-->clientHandlerExitCheck
+        clientHandlerExitCheck-->waitClientInputQ["inputQueue.wait_dequeue_timed()"]
+        waitClientInputQ--1s timeout-->clientHandlerNextLoop["NEXT LOOP CHECK"]
+
+        waitClientInputQ-->encode["encode data"]
+        encode-->enqueueOutputQ["enqueueElement(outputQueue, result)"]
+        enqueueOutputQ-->notifyPoll["notifyPoll(writeEventfd)"]:::crossThread
+        notifyPoll-->clientHandlerNextLoop
+    end
+    serverHandlerNextLoop--join-->stopHandler
+    clientHandlerNextLoop--join-->stopHandler
 end
 
-subgraph clientSocketThread[Client Socket Thread]
-    runClient-->connect["connect(sock, (struct sockaddr*)&addr, sizeof(addr)"]
-    connect-->startWriterThread
-    startWriterThread-->clientStop
-    clientStop--no -->sleep_c["Sleep 1s"]
-    sleep_c-->clientStop
-    clientStop--yes-->writerJoin
-    startWriterThread--join-->writerJoin
-    writerJoin-->c_sclose["close socket"]
-end
-s_sclose--join-->stopSocket
-c_sclose--join-->stopSocket
-```
-
-#### Sequence Diagram
-```mermaid
-sequenceDiagram
-    Client.main->>Client.ThreadManager: startHandler()
-    Client.ThreadManager->>+Client.HandlerThread: clientHandler()
-    Client.main->>+Client.ThreadManager: startSocket()
-
-    Client.ThreadManager->>+Client.WriterThread:
-    loop if user not exit
-        Client.main->>Client.main: get legal command
-        Client.main-)Client.ThreadManager: update user command
-        Client.ThreadManager-)Client.HandlerThread: pass data with inputQueue
-    end
-
-
-    loop if handler alive
-        Client.HandlerThread->>Client.HandlerThread: no element in inputQueue
-        Client.HandlerThread->>Client.WriterThread: pass encoded data with outputQueue
-    end
-
-    loop if socket alive
-        Client.WriterThread->>Client.WriterThread: no element in outputQueue
-        Client.WriterThread->>Server.ReaderThread: pass commandId, len, buffer
-    end
-
-    Server.ReaderThread->>Server.HandlerThread: pass data with inputQueue
-
-    loop if handler alive
-        Server.HandlerThread->>Server.HandlerThread: no element in inputQueue
-        Server.HandlerThread->>Server.HandlerThread: decode and show result
-    end
-
-    Client.main->>Client.ThreadManager: stopSocket()
-    Client.ThreadManager--)Client.WriterThread: stop
-    Client.WriterThread--)-Client.main:
-    Client.main->>Client.ThreadManager: stopHandler()
-    Client.ThreadManager--)Client.HandlerThread: stop
-    Client.HandlerThread--)-Client.main:
+clearQueue-->END
 ```
 
 ## Demo structure
@@ -383,7 +377,7 @@ static int socket_receive(const char* portstr, void* buffer, size_t* size);
 
 ### encode / decode single structure
 ```c
-/* encode the wifi_softap_info_t struct 
+/* encode the wifi_softap_info_t struct
  * library: "tpl", "mpack", "nanopb"
  * out_buffer, out_size: output buffer and size
  * returns 0 on success
@@ -392,7 +386,7 @@ static int encode(char* library, wifi_softap_info_t* info, void** out_buffer, si
 // for stack buffer
 static int encode(char* library, wifi_softap_info_t* info, void* out_buffer, size_t* out_size);
 
-/* decode the wifi_softap_info_t struct 
+/* decode the wifi_softap_info_t struct
  * library: "tpl", "mpack", "nanopb"
  * buf, sz: input buffer and size
  * out_info: output struct
